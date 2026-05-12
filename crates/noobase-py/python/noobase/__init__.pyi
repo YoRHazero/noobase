@@ -6,6 +6,9 @@ from numpy.typing import NDArray
 Spacing = Literal["linear", "log"]
 GridKind = Literal["centers", "edges"]
 
+WavelengthArg = Union["Grid", NDArray[Any]]
+TargetArg = Union["Grid", NDArray[Any]]
+
 
 class Grid:
     def __init__(
@@ -66,6 +69,60 @@ class Grid:
     def to_centers(self) -> "Grid": ...
 
     def is_uniform(self, rel_tol: float = 1e-9) -> bool: ...
+
+
+class Spectrum:
+    @overload
+    def __init__(
+        self,
+        *,
+        wavelength: Grid,
+        flux: NDArray[Any],
+        error: Optional[NDArray[Any]] = None,
+        mask: Optional[NDArray[np.bool_]] = None,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        *,
+        wavelength: NDArray[Any],
+        flux: NDArray[Any],
+        error: Optional[NDArray[Any]] = None,
+        mask: Optional[NDArray[np.bool_]] = None,
+        spacing: Spacing = "linear",
+        kind: GridKind = "centers",
+    ) -> None: ...
+
+    @property
+    def wavelength(self) -> Grid: ...
+
+    @property
+    def flux(self) -> NDArray[Any]: ...
+
+    @property
+    def error(self) -> Optional[NDArray[Any]]: ...
+
+    @property
+    def mask(self) -> Optional[NDArray[np.bool_]]: ...
+
+    @property
+    def n_bins(self) -> int: ...
+
+    @property
+    def dtype(self) -> np.dtype[Any]: ...
+
+    @overload
+    def rebin(self, target: Grid) -> "Spectrum": ...
+
+    @overload
+    def rebin(
+        self,
+        target: NDArray[Any],
+        *,
+        spacing: Spacing = "linear",
+        kind: GridKind = "centers",
+    ) -> "Spectrum": ...
 
 
 class _OverlapModule:
