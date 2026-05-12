@@ -197,6 +197,34 @@ impl PySpectrum {
         Ok(PySpectrum::from_inner(output_inner))
     }
 
+    fn to_f_nu(&self, speed_of_light: f64) -> PySpectrum {
+        let inner = match &self.inner {
+            SpectrumInner::F64(spectrum) => SpectrumInner::F64(spectrum.to_f_nu(speed_of_light)),
+            // Accept f64 from Python and cast to f32 to match the spectrum's
+            // dtype. This is a single scalar, not array data, so the cast does
+            // not affect bulk allocation or vectorization.
+            SpectrumInner::F32(spectrum) => {
+                SpectrumInner::F32(spectrum.to_f_nu(speed_of_light as f32))
+            }
+        };
+        PySpectrum::from_inner(inner)
+    }
+
+    fn to_f_lambda(&self, speed_of_light: f64) -> PySpectrum {
+        let inner = match &self.inner {
+            SpectrumInner::F64(spectrum) => {
+                SpectrumInner::F64(spectrum.to_f_lambda(speed_of_light))
+            }
+            // Accept f64 from Python and cast to f32 to match the spectrum's
+            // dtype. This is a single scalar, not array data, so the cast does
+            // not affect bulk allocation or vectorization.
+            SpectrumInner::F32(spectrum) => {
+                SpectrumInner::F32(spectrum.to_f_lambda(speed_of_light as f32))
+            }
+        };
+        PySpectrum::from_inner(inner)
+    }
+
     fn __repr__(&self) -> String {
         let (n, dtype_name) = match &self.inner {
             SpectrumInner::F32(spectrum) => (spectrum.n_bins(), "float32"),

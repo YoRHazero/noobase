@@ -237,3 +237,93 @@ def test_rebin_downsample_error_quadrature(dtype):
     rebinned = spectrum.rebin(target)
     expected = float(np.sqrt(variance / 2.0))
     np.testing.assert_allclose(rebinned.error, [expected, expected], rtol=TOLERANCE)
+
+
+# ---------------------------------------------------------------------------
+# Flux density conversion (f_lambda <-> f_nu)
+# ---------------------------------------------------------------------------
+
+
+def _conversion_tolerance(dtype):
+    return 1e-4 if dtype == np.float32 else 1e-10
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_flux_conversion_round_trip(dtype):
+    wavelength = np.array([1000.0, 1500.0, 2000.0, 2500.0], dtype=dtype)
+    flux = np.array([3.5, 4.1, 5.7, 2.3], dtype=dtype)
+    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    speed_of_light = 2.998e18
+    recovered = spectrum.to_f_nu(speed_of_light).to_f_lambda(speed_of_light)
+    np.testing.assert_allclose(
+        recovered.flux, flux, rtol=_conversion_tolerance(dtype)
+    )
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_flux_conversion_forward_analytical(dtype):
+    # Centers [2, 5], flux=[1, 1], c=1 -> to_f_nu yields flux=[4, 25].
+    wavelength = np.array([2.0, 5.0], dtype=dtype)
+    flux = np.array([1.0, 1.0], dtype=dtype)
+    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    output = spectrum.to_f_nu(1.0)
+    np.testing.assert_allclose(
+        output.flux, [4.0, 25.0], rtol=_conversion_tolerance(dtype)
+    )
+    back = output.to_f_lambda(1.0)
+    np.testing.assert_allclose(back.flux, flux, rtol=_conversion_tolerance(dtype))
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_flux_conversion_error_scaling(dtype):
+    wavelength = np.array([2.0, 5.0], dtype=dtype)
+    flux = np.array([1.0, 1.0], dtype=dtype)
+    error = np.array([0.1, 0.2], dtype=dtype)
+    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux, error=error)
+    forward = spectrum.to_f_nu(1.0)
+    # factor = [4, 25]; error scales by the same factor.
+    np.testing.assert_allclose(
+        forward.error, [0.1 * 4.0, 0.2 * 25.0], rtol=_conversion_tolerance(dtype)
+    )
+    backward = spectrum.to_f_lambda(1.0)
+    # factor = [1/4, 1/25].
+    np.testing.assert_allclose(
+        backward.error,
+        [0.1 * 0.25, 0.2 * 0.04],
+        rtol=_conversion_tolerance(dtype),
+    )
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_flux_conversion_mask_preservation(dtype):
+    wavelength = np.array([1.0, 2.0, 3.0, 4.0], dtype=dtype)
+    flux = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
+    mask = np.array([True, False, True, False], dtype=np.bool_)
+    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux, mask=mask)
+    forward = spectrum.to_f_nu(1.0)
+    np.testing.assert_array_equal(forward.mask, mask)
+    backward = spectrum.to_f_lambda(1.0)
+    np.testing.assert_array_equal(backward.mask, mask)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_flux_conversion_dtype_preserved(dtype):
+    wavelength = np.array([1.0, 2.0, 3.0], dtype=dtype)
+    flux = np.array([1.0, 2.0, 3.0], dtype=dtype)
+    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    forward = spectrum.to_f_nu(1.0)
+    assert forward.flux.dtype == np.dtype(dtype)
+    assert forward.dtype == np.dtype(dtype)
+    backward = forward.to_f_lambda(1.0)
+    assert backward.flux.dtype == np.dtype(dtype)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_flux_conversion_wavelength_preserved(dtype):
+    wavelength = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
+    flux = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
+    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    output = spectrum.to_f_nu(1.0)
+    assert output.wavelength.kind == wavelength.kind
+    assert output.wavelength.spacing == wavelength.spacing
+    np.testing.assert_array_equal(output.wavelength.values, wavelength.values)
