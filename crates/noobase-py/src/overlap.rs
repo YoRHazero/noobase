@@ -164,11 +164,10 @@ pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule
     overlap.add_function(wrap_pyfunction!(overlap_coverage, &overlap)?)?;
     parent.add_submodule(&overlap)?;
 
-    // Register the submodule under sys.modules so `from noobase.overlap import ...`
-    // and `noobase._core.overlap` both resolve to the same module object.
+    // Register the submodule under its dotted name so `from noobase._core.overlap
+    // import ...` (used by the `noobase.overlap` python wrapper) resolves.
     let sys_modules = py.import("sys")?.getattr("modules")?;
     sys_modules.set_item("noobase._core.overlap", &overlap)?;
-    sys_modules.set_item("noobase.overlap", &overlap)?;
 
     Ok(())
 }

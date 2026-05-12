@@ -3,6 +3,8 @@ from typing import Any, Literal, Optional, Union, overload
 import numpy as np
 from numpy.typing import NDArray
 
+from . import overlap as overlap
+
 Spacing = Literal["linear", "log"]
 GridKind = Literal["centers", "edges"]
 
@@ -125,26 +127,3 @@ class Spectrum:
     ) -> "Spectrum": ...
 
 
-class _OverlapModule:
-    @staticmethod
-    def rebin(
-        source_grid: Grid,
-        source_values: NDArray[Any],
-        target_grid: Grid,
-    ) -> NDArray[Any]: ...
-
-    @staticmethod
-    def rebin_variance(
-        source_grid: Grid,
-        source_variance: NDArray[Any],
-        target_grid: Grid,
-    ) -> NDArray[Any]: ...
-
-    @staticmethod
-    def coverage(
-        source_grid: Grid,
-        target_grid: Grid,
-    ) -> NDArray[Any]: ...
-
-
-overlap: _OverlapModule

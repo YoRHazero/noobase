@@ -1,5 +1,6 @@
 """Python bindings for the noobase Rust core."""
 
-from ._core import Grid, Spectrum, overlap
+from . import overlap
+from ._core import Grid, Spectrum
 
 __all__ = ["Grid", "Spectrum", "overlap"]
