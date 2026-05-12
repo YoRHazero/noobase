@@ -1,3 +1,5 @@
+use ndarray::{Array1, ArrayView1};
+
 use crate::bins::Grid;
 use crate::float::Float;
 
@@ -57,6 +59,60 @@ where
             target_index += 1;
         }
     }
+}
+
+/// Flux-density-conserving rebin from `source` onto `target`.
+///
+/// For each target bin `i`,
+/// ```text
+/// out[i] = (Σ_j overlap[i, j] * source_values[j]) / target_width[i]
+/// ```
+/// where `overlap[i, j]` is the linear-space intersection width between target
+/// bin `i` and source bin `j`, and `target_width[i]` is the full linear-space
+/// width of target bin `i`. This preserves the integral
+/// `Σ_i out[i] * target_width[i]` over the region where source and target
+/// overlap, so the values behave like a density (flux per unit x).
+///
+/// Target bins that lie partially or fully outside the source range are NOT
+/// treated as errors: the sum is simply taken over whatever overlap exists.
+/// Callers that need to mask such bins should use [`coverage`].
+///
+/// Panics if `source_values.len()` does not match the number of source bins
+/// (i.e. `source.to_edges().len() - 1`).
+pub fn rebin<T: Float>(
+    source: &Grid<T>,
+    source_values: ArrayView1<T>,
+    target: &Grid<T>,
+) -> Array1<T> {
+    let source_edges_grid = source.to_edges();
+    let target_edges_grid = target.to_edges();
+    let source_bin_count = source_edges_grid.len() - 1;
+    let target_bin_count = target_edges_grid.len() - 1;
+    assert_eq!(
+        source_values.len(),
+        source_bin_count,
+        "source_values length {} does not match source bin count {}",
+        source_values.len(),
+        source_bin_count
+    );
+    let target_edges = target_edges_grid.values();
+    let mut weighted_sum = Array1::<T>::zeros(target_bin_count);
+    for_each(
+        &source_edges_grid,
+        &target_edges_grid,
+        |target_index, source_index, overlap_width| {
+            weighted_sum[target_index] =
+                weighted_sum[target_index] + overlap_width * source_values[source_index];
+        },
+    );
+    let mut output = Array1::<T>::zeros(target_bin_count);
+    for target_index in 0..target_bin_count {
+        let target_width = target_edges[target_index + 1] - target_edges[target_index];
+        if target_width > T::zero() {
+            output[target_index] = weighted_sum[target_index] / target_width;
+        }
+    }
+    output
 }
 
 #[cfg(test)]
@@ -162,6 +218,69 @@ mod tests {
         assert!(approx_eq(calls[0].2, 5.0, TOL));
         assert_eq!(calls[1].1, 1);
         assert!(approx_eq(calls[1].2, 40.0, TOL));
+    }
+
+    #[test]
+    fn rebin_identity_linear() {
+        let grid = linear_edges(&[0.0, 1.0, 2.0, 3.0, 4.0]);
+        let values = array![1.0_f64, 2.0, 3.0, 4.0];
+        let output = rebin(&grid, values.view(), &grid);
+        assert_eq!(output.len(), values.len());
+        for i in 0..values.len() {
+            assert!(approx_eq(output[i], values[i], TOL));
+        }
+    }
+
+    #[test]
+    fn rebin_identity_log() {
+        let grid = Grid::<f64>::logspace(1.0, 10000.0, 5, GridKind::Edges);
+        let values = array![1.0_f64, 2.5, 7.0, 3.0];
+        let output = rebin(&grid, values.view(), &grid);
+        for i in 0..values.len() {
+            assert!(approx_eq(output[i], values[i], TOL));
+        }
+    }
+
+    #[test]
+    fn rebin_constant_input_preserved_on_fully_covered_bins() {
+        // Source bins covering [0, 10) with 10 unit-width bins, all-equal value c.
+        // Target bins covering [2, 8) with 3 width-2 bins are all fully covered, so
+        // the rebinned density should equal c there.
+        // The first/last target bins at the original-grid edges would only partially
+        // overlap, but we choose target entirely inside source to keep the property
+        // exact for every output entry. Partial-coverage bins at the edges of the
+        // source range are NOT required to equal c.
+        let constant_value = 4.25_f64;
+        let source = linear_edges(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
+        let source_values = Array1::<f64>::from_elem(10, constant_value);
+        let target = linear_edges(&[2.0, 4.0, 6.0, 8.0]);
+        let output = rebin(&source, source_values.view(), &target);
+        assert_eq!(output.len(), 3);
+        for value in output.iter() {
+            assert!(approx_eq(*value, constant_value, TOL));
+        }
+    }
+
+    #[test]
+    fn rebin_downsample_two_to_one() {
+        // Source: 4 width-1 bins with values [a, b, c, d]
+        // Target: 2 width-2 bins -> expected [(a+b)/2, (c+d)/2]
+        let source = linear_edges(&[0.0, 1.0, 2.0, 3.0, 4.0]);
+        let target = linear_edges(&[0.0, 2.0, 4.0]);
+        let values = array![1.0_f64, 3.0, 5.0, 9.0];
+        let output = rebin(&source, values.view(), &target);
+        assert_eq!(output.len(), 2);
+        assert!(approx_eq(output[0], (1.0 + 3.0) / 2.0, TOL));
+        assert!(approx_eq(output[1], (5.0 + 9.0) / 2.0, TOL));
+    }
+
+    #[test]
+    #[should_panic(expected = "source_values length")]
+    fn rebin_panics_on_length_mismatch() {
+        let source = linear_edges(&[0.0, 1.0, 2.0, 3.0]);
+        let target = linear_edges(&[0.0, 1.5, 3.0]);
+        let bad_values = array![1.0_f64, 2.0]; // 2 != 3 source bins
+        let _ = rebin(&source, bad_values.view(), &target);
     }
 
     #[test]
