@@ -115,6 +115,56 @@ pub fn rebin<T: Float>(
     output
 }
 
+/// Variance propagation for [`rebin`] assuming the source bins have
+/// independent (uncorrelated) errors. Each output target bin combines its
+/// source contributions with squared weights, so
+/// ```text
+/// out[i] = Σ_j (overlap[i, j] / target_width[i])^2 * source_variance[j]
+/// ```
+///
+/// As with [`rebin`], partial-coverage target bins are not errors; their
+/// variance is computed against the partial sum and should usually be masked
+/// by the caller using [`coverage`].
+///
+/// Panics if `source_variance.len()` does not match the number of source bins.
+pub fn rebin_variance<T: Float>(
+    source: &Grid<T>,
+    source_variance: ArrayView1<T>,
+    target: &Grid<T>,
+) -> Array1<T> {
+    let source_edges_grid = source.to_edges();
+    let target_edges_grid = target.to_edges();
+    let source_bin_count = source_edges_grid.len() - 1;
+    let target_bin_count = target_edges_grid.len() - 1;
+    assert_eq!(
+        source_variance.len(),
+        source_bin_count,
+        "source_variance length {} does not match source bin count {}",
+        source_variance.len(),
+        source_bin_count
+    );
+    let target_edges = target_edges_grid.values();
+    // Accumulate Σ_j overlap[i, j]^2 * var[j] first, divide by target_width[i]^2 at the end.
+    let mut squared_weighted_sum = Array1::<T>::zeros(target_bin_count);
+    for_each(
+        &source_edges_grid,
+        &target_edges_grid,
+        |target_index, source_index, overlap_width| {
+            let contribution = overlap_width * overlap_width * source_variance[source_index];
+            squared_weighted_sum[target_index] = squared_weighted_sum[target_index] + contribution;
+        },
+    );
+    let mut output = Array1::<T>::zeros(target_bin_count);
+    for target_index in 0..target_bin_count {
+        let target_width = target_edges[target_index + 1] - target_edges[target_index];
+        if target_width > T::zero() {
+            let denom = target_width * target_width;
+            output[target_index] = squared_weighted_sum[target_index] / denom;
+        }
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,6 +331,40 @@ mod tests {
         let target = linear_edges(&[0.0, 1.5, 3.0]);
         let bad_values = array![1.0_f64, 2.0]; // 2 != 3 source bins
         let _ = rebin(&source, bad_values.view(), &target);
+    }
+
+    #[test]
+    fn rebin_variance_identity_linear() {
+        let grid = linear_edges(&[0.0, 1.0, 2.0, 3.0, 4.0]);
+        let variance = array![0.5_f64, 1.5, 2.5, 3.5];
+        let output = rebin_variance(&grid, variance.view(), &grid);
+        for i in 0..variance.len() {
+            assert!(approx_eq(output[i], variance[i], TOL));
+        }
+    }
+
+    #[test]
+    fn rebin_variance_downsample_two_to_one_constant() {
+        // Source: 4 width-1 bins, each with variance v.
+        // Target: 2 width-2 bins. For each target bin:
+        //   out = (1^2 * v + 1^2 * v) / 2^2 = 2v / 4 = v / 2
+        let source = linear_edges(&[0.0, 1.0, 2.0, 3.0, 4.0]);
+        let target = linear_edges(&[0.0, 2.0, 4.0]);
+        let v = 0.8_f64;
+        let variance = Array1::<f64>::from_elem(4, v);
+        let output = rebin_variance(&source, variance.view(), &target);
+        assert_eq!(output.len(), 2);
+        assert!(approx_eq(output[0], v / 2.0, TOL));
+        assert!(approx_eq(output[1], v / 2.0, TOL));
+    }
+
+    #[test]
+    #[should_panic(expected = "source_variance length")]
+    fn rebin_variance_panics_on_length_mismatch() {
+        let source = linear_edges(&[0.0, 1.0, 2.0, 3.0]);
+        let target = linear_edges(&[0.0, 1.5, 3.0]);
+        let bad_variance = array![1.0_f64, 2.0]; // 2 != 3 source bins
+        let _ = rebin_variance(&source, bad_variance.view(), &target);
     }
 
     #[test]
