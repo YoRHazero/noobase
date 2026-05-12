@@ -5,8 +5,9 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::grid::{GridInner, PyGrid};
-use crate::helpers::{build_grid_from_any, parse_kind, parse_spacing};
-use crate::overlap::{dtype_mismatch_error, grid_dtype_name};
+use crate::helpers::{
+    build_grid_from_any, dtype_mismatch_error, grid_dtype_name, parse_kind, parse_spacing,
+};
 
 pub(crate) enum SpectrumInner {
     F32(CoreSpectrum<f32>),

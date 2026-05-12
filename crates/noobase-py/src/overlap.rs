@@ -5,23 +5,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::grid::{GridInner, PyGrid};
-
-pub(crate) fn dtype_mismatch_error(
-    left: &'static str,
-    right: &'static str,
-    context: &str,
-) -> PyErr {
-    PyValueError::new_err(format!(
-        "dtype mismatch: {context} ({left} vs {right}); align dtypes explicitly"
-    ))
-}
-
-pub(crate) fn grid_dtype_name(inner: &GridInner) -> &'static str {
-    match inner {
-        GridInner::F32(_) => "float32",
-        GridInner::F64(_) => "float64",
-    }
-}
+use crate::helpers::{dtype_mismatch_error, grid_dtype_name};
 
 #[pyfunction]
 #[pyo3(name = "rebin")]

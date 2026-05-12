@@ -62,6 +62,23 @@ pub(crate) fn build_grid_from_any(
     }
 }
 
+pub(crate) fn dtype_mismatch_error(
+    left: &'static str,
+    right: &'static str,
+    context: &str,
+) -> PyErr {
+    PyValueError::new_err(format!(
+        "dtype mismatch: {context} ({left} vs {right}); align dtypes explicitly"
+    ))
+}
+
+pub(crate) fn grid_dtype_name(inner: &GridInner) -> &'static str {
+    match inner {
+        GridInner::F32(_) => "float32",
+        GridInner::F64(_) => "float64",
+    }
+}
+
 pub(crate) fn is_float32_dtype(
     py: Python<'_>,
     dtype_arg: Option<&Bound<'_, PyAny>>,
