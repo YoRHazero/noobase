@@ -6,8 +6,11 @@ license.workspace = true
 description = "Python bindings for noobase"
 
 [lib]
-name = "noobase"
+name = "_core"
 crate-type = ["cdylib"]
 
 [dependencies]
+ndarray.workspace = true
+noobase = { workspace = true }
+numpy = { workspace = true }
 pyo3 = { workspace = true, features = ["extension-module"] }

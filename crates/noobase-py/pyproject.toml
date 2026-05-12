@@ -16,9 +16,10 @@ dependencies = [
 ]
 
 [tool.maturin]
-module-name = "noobase"
+module-name = "noobase._core"
 features = ["pyo3/extension-module"]
 manifest-path = "Cargo.toml"
+python-source = "python"
 
 [tool.uv]
 cache-keys = [
