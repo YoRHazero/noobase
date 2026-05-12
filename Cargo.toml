@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["crates/noobase", "crates/noobase-py"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+noobase = { path = "crates/noobase" }
+ndarray = "0.16"
+num-traits = "0.2"
+thiserror = "2"
+numpy = "0.28"
+pyo3 = "0.28"
+
+[profile.release]
+lto = true
+codegen-units = 1

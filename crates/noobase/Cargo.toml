@@ -1,0 +1,11 @@
+[package]
+name = "noobase"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Foundational pure-function utilities"
+
+[dependencies]
+ndarray = { workspace = true }
+num-traits = { workspace = true }
+thiserror = { workspace = true }

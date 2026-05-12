@@ -1,0 +1,31 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "noobase"
+version = "0.1.0"
+description = "Foundational pure-function utilities (Python bindings)"
+requires-python = ">=3.14"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+dependencies = [
+    "numpy>=2",
+]
+
+[tool.maturin]
+module-name = "noobase"
+features = ["pyo3/extension-module"]
+manifest-path = "Cargo.toml"
+
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "../../Cargo.toml" },
+    { file = "../../Cargo.lock" },
+    { file = "src/**/*.rs" },
+    { file = "../noobase/src/**/*.rs" },
+]

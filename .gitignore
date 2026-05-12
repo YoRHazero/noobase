@@ -1,0 +1,29 @@
+# Rust
+target/
+Cargo.lock.bak
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.so
+*.pyd
+
+# Maturin
+wheels/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Personal Claude config
+CLAUDE.local.md
+.claude/settings.local.json
+
+# Personal planning notes
+ROADMAP.md
