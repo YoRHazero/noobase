@@ -136,6 +136,81 @@ impl<T: Float> Spectrum<T> {
             mask: output_mask,
         }
     }
+
+    /// Convert flux density from f_lambda to f_nu via `f_nu = f_lambda * lambda^2 / c`.
+    ///
+    /// `speed_of_light` must match the wavelength axis units. For example, if the
+    /// wavelength axis is in angstroms, pass `c` in angstroms per second
+    /// (approximately `2.998e18`). noobase does not track units; consistency is the
+    /// caller's responsibility.
+    ///
+    /// The wavelength grid is preserved unchanged. The error array, if present,
+    /// scales element-wise by the same factor (`sigma_new = sigma_old * lambda^2 / c`).
+    /// The mask is preserved.
+    ///
+    /// This method does not check whether the input is in fact f_lambda; it
+    /// unconditionally applies the conversion factor. The caller is responsible
+    /// for tracking which density the spectrum currently represents.
+    pub fn to_f_nu(&self, speed_of_light: T) -> Spectrum<T> {
+        self.convert_with_factor(|wavelength| (wavelength * wavelength) / speed_of_light)
+    }
+
+    /// Convert flux density from f_nu to f_lambda via `f_lambda = f_nu * c / lambda^2`.
+    ///
+    /// `speed_of_light` must match the wavelength axis units. For example, if the
+    /// wavelength axis is in angstroms, pass `c` in angstroms per second
+    /// (approximately `2.998e18`). noobase does not track units; consistency is the
+    /// caller's responsibility.
+    ///
+    /// The wavelength grid is preserved unchanged. The error array, if present,
+    /// scales element-wise by the same factor (`sigma_new = sigma_old * c / lambda^2`).
+    /// The mask is preserved.
+    ///
+    /// This method does not check whether the input is in fact f_nu; it
+    /// unconditionally applies the conversion factor. The caller is responsible
+    /// for tracking which density the spectrum currently represents.
+    pub fn to_f_lambda(&self, speed_of_light: T) -> Spectrum<T> {
+        self.convert_with_factor(|wavelength| speed_of_light / (wavelength * wavelength))
+    }
+
+    /// Apply a per-bin scalar factor (computed from each bin's center wavelength)
+    /// to flux and error, leaving wavelength and mask untouched. Used to share
+    /// the conversion plumbing between `to_f_nu` and `to_f_lambda`.
+    fn convert_with_factor<F>(&self, factor_for: F) -> Spectrum<T>
+    where
+        F: Fn(T) -> T,
+    {
+        let centers_grid = match self.wavelength.kind() {
+            GridKind::Centers => None,
+            GridKind::Edges => Some(self.wavelength.to_centers()),
+        };
+        let wavelength_centers = match &centers_grid {
+            Some(grid) => grid.values(),
+            None => self.wavelength.values(),
+        };
+        let bin_count = self.flux.len();
+        let mut new_flux = Array1::<T>::zeros(bin_count);
+        for index in 0..bin_count {
+            let factor = factor_for(wavelength_centers[index]);
+            new_flux[index] = self.flux[index] * factor;
+        }
+        let new_error = self.error.as_ref().map(|error_array| {
+            let mut output = Array1::<T>::zeros(bin_count);
+            for index in 0..bin_count {
+                let factor = factor_for(wavelength_centers[index]);
+                output[index] = error_array[index] * factor;
+            }
+            output
+        });
+        // Direct struct construction: lengths are guaranteed to match self,
+        // so going through `Spectrum::new` would only repeat validation.
+        Spectrum {
+            wavelength: self.wavelength.clone(),
+            flux: new_flux,
+            error: new_error,
+            mask: self.mask.clone(),
+        }
+    }
 }
 
 fn bin_count<T: Float>(wavelength: &Grid<T>) -> usize {
@@ -475,5 +550,198 @@ mod tests {
         let output = spectrum.rebin(&target_wavelength);
         assert_eq!(output.wavelength().kind(), GridKind::Edges);
         assert_eq!(output.wavelength().len(), 3);
+    }
+
+    fn approx_eq_array_f64(actual: &[f64], expected: &[f64], tol: f64) {
+        assert_eq!(actual.len(), expected.len(), "length mismatch");
+        for index in 0..actual.len() {
+            assert!(
+                approx_eq(actual[index], expected[index], tol),
+                "index {index}: actual={}, expected={}",
+                actual[index],
+                expected[index]
+            );
+        }
+    }
+
+    #[test]
+    fn flux_conversion_round_trip_identity_f64() {
+        let wavelength = centers_grid_f64(&[1000.0, 1500.0, 2000.0, 2500.0]);
+        let flux = array![3.5_f64, 4.1, 5.7, 2.3];
+        let spectrum = Spectrum::new(wavelength, flux.clone(), None, None).unwrap();
+        let speed_of_light = 2.998e18_f64;
+        let recovered = spectrum.to_f_nu(speed_of_light).to_f_lambda(speed_of_light);
+        let recovered_flux = recovered.flux();
+        approx_eq_array_f64(
+            recovered_flux.as_slice().unwrap(),
+            flux.as_slice().unwrap(),
+            TOL,
+        );
+    }
+
+    #[test]
+    fn flux_conversion_round_trip_identity_f32() {
+        let wavelength = Grid::<f32>::linspace(1000.0, 2500.0, 4, GridKind::Centers);
+        let flux = array![3.5_f32, 4.1, 5.7, 2.3];
+        let spectrum = Spectrum::new(wavelength, flux.clone(), None, None).unwrap();
+        let speed_of_light = 2.998e18_f32;
+        let recovered = spectrum.to_f_nu(speed_of_light).to_f_lambda(speed_of_light);
+        let recovered_flux = recovered.flux();
+        let tol_f32 = 1e-4_f32;
+        for index in 0..flux.len() {
+            let actual = recovered_flux[index];
+            let expected = flux[index];
+            let diff = (actual - expected).abs();
+            let bound = tol_f32 * actual.abs().max(expected.abs()).max(1.0);
+            assert!(
+                diff <= bound,
+                "index {index}: actual={actual}, expected={expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn flux_conversion_analytical_to_f_nu_centers() {
+        // Two centers, flux=1 each, c=1: output flux = lambda^2.
+        let wavelength = centers_grid_f64(&[2.0, 5.0]);
+        let flux = array![1.0_f64, 1.0];
+        let spectrum = Spectrum::new(wavelength, flux, None, None).unwrap();
+        let output = spectrum.to_f_nu(1.0);
+        let output_flux = output.flux();
+        assert!(approx_eq(output_flux[0], 4.0, TOL));
+        assert!(approx_eq(output_flux[1], 25.0, TOL));
+    }
+
+    #[test]
+    fn flux_conversion_error_scaling_to_f_nu() {
+        let wavelength = centers_grid_f64(&[2.0, 5.0]);
+        let flux = array![1.0_f64, 1.0];
+        let error = array![0.1_f64, 0.2];
+        let spectrum = Spectrum::new(wavelength, flux, Some(error.clone()), None).unwrap();
+        let speed_of_light = 1.0_f64;
+        let output = spectrum.to_f_nu(speed_of_light);
+        let output_error = output.error().unwrap();
+        // factor[0] = 4 / 1 = 4; factor[1] = 25 / 1 = 25.
+        assert!(approx_eq(output_error[0], 0.1 * 4.0, TOL));
+        assert!(approx_eq(output_error[1], 0.2 * 25.0, TOL));
+    }
+
+    #[test]
+    fn flux_conversion_error_scaling_to_f_lambda() {
+        let wavelength = centers_grid_f64(&[2.0, 5.0]);
+        let flux = array![1.0_f64, 1.0];
+        let error = array![0.4_f64, 0.5];
+        let spectrum = Spectrum::new(wavelength, flux, Some(error), None).unwrap();
+        let speed_of_light = 1.0_f64;
+        let output = spectrum.to_f_lambda(speed_of_light);
+        let output_error = output.error().unwrap();
+        // factor[0] = 1 / 4 = 0.25; factor[1] = 1 / 25 = 0.04.
+        assert!(approx_eq(output_error[0], 0.4 * 0.25, TOL));
+        assert!(approx_eq(output_error[1], 0.5 * 0.04, TOL));
+    }
+
+    #[test]
+    fn flux_conversion_mask_preservation() {
+        let wavelength = centers_grid_f64(&[1.0, 2.0, 3.0, 4.0]);
+        let flux = array![1.0_f64, 1.0, 1.0, 1.0];
+        let mask = array![true, false, true, false];
+        let spectrum = Spectrum::new(wavelength, flux, None, Some(mask.clone())).unwrap();
+        let output = spectrum.to_f_nu(1.0);
+        let output_mask = output.mask().unwrap();
+        assert_eq!(output_mask.len(), mask.len());
+        for index in 0..mask.len() {
+            assert_eq!(output_mask[index], mask[index]);
+        }
+        let output_back = spectrum.to_f_lambda(1.0);
+        let output_back_mask = output_back.mask().unwrap();
+        for index in 0..mask.len() {
+            assert_eq!(output_back_mask[index], mask[index]);
+        }
+    }
+
+    #[test]
+    fn flux_conversion_error_none_survives() {
+        let wavelength = centers_grid_f64(&[1.0, 2.0, 3.0]);
+        let flux = array![1.0_f64, 2.0, 3.0];
+        let spectrum = Spectrum::new(wavelength, flux, None, None).unwrap();
+        let output = spectrum.to_f_nu(1.0);
+        assert!(output.error().is_none());
+        let output_back = spectrum.to_f_lambda(1.0);
+        assert!(output_back.error().is_none());
+    }
+
+    #[test]
+    fn flux_conversion_mask_none_survives() {
+        let wavelength = centers_grid_f64(&[1.0, 2.0, 3.0]);
+        let flux = array![1.0_f64, 2.0, 3.0];
+        let spectrum = Spectrum::new(wavelength, flux, None, None).unwrap();
+        let output = spectrum.to_f_nu(1.0);
+        assert!(output.mask().is_none());
+        let output_back = spectrum.to_f_lambda(1.0);
+        assert!(output_back.mask().is_none());
+    }
+
+    #[test]
+    fn flux_conversion_centers_path_preserves_wavelength() {
+        let wavelength = centers_grid_f64(&[1.5, 2.5, 3.5]);
+        let flux = array![1.0_f64, 2.0, 3.0];
+        let spectrum = Spectrum::new(wavelength.clone(), flux, None, None).unwrap();
+        let output = spectrum.to_f_nu(1.0);
+        assert_eq!(output.wavelength().kind(), wavelength.kind());
+        assert_eq!(output.wavelength().spacing(), wavelength.spacing());
+        let input_values = wavelength.values();
+        let output_values = output.wavelength().values();
+        assert_eq!(output_values.len(), input_values.len());
+        for index in 0..input_values.len() {
+            assert_eq!(output_values[index], input_values[index]);
+        }
+    }
+
+    #[test]
+    fn flux_conversion_edges_path_uses_centers_and_preserves_wavelength() {
+        // Edges [0, 2, 4] -> centers [1, 3]. flux=[1, 1], c=1.
+        // factor = [1^2, 3^2] = [1, 9].
+        let wavelength = edges_grid_f64(&[0.0, 2.0, 4.0]);
+        let flux = array![1.0_f64, 1.0];
+        let spectrum = Spectrum::new(wavelength.clone(), flux, None, None).unwrap();
+        let output = spectrum.to_f_nu(1.0);
+        let output_flux = output.flux();
+        assert!(approx_eq(output_flux[0], 1.0, TOL));
+        assert!(approx_eq(output_flux[1], 9.0, TOL));
+        // Wavelength grid is preserved as Edges (not collapsed to centers).
+        assert_eq!(output.wavelength().kind(), GridKind::Edges);
+        let input_values = wavelength.values();
+        let output_values = output.wavelength().values();
+        assert_eq!(output_values.len(), input_values.len());
+        for index in 0..input_values.len() {
+            assert_eq!(output_values[index], input_values[index]);
+        }
+    }
+
+    #[test]
+    fn flux_conversion_n_bins_preserved_centers_and_edges() {
+        let centers = centers_grid_f64(&[1.0, 2.0, 3.0]);
+        let flux_centers = array![1.0_f64, 2.0, 3.0];
+        let spectrum_centers = Spectrum::new(centers, flux_centers, None, None).unwrap();
+        assert_eq!(
+            spectrum_centers.to_f_nu(1.0).n_bins(),
+            spectrum_centers.n_bins()
+        );
+        assert_eq!(
+            spectrum_centers.to_f_lambda(1.0).n_bins(),
+            spectrum_centers.n_bins()
+        );
+
+        let edges = edges_grid_f64(&[0.0, 1.0, 2.0, 3.0, 4.0]);
+        let flux_edges = array![1.0_f64, 2.0, 3.0, 4.0];
+        let spectrum_edges = Spectrum::new(edges, flux_edges, None, None).unwrap();
+        assert_eq!(
+            spectrum_edges.to_f_nu(1.0).n_bins(),
+            spectrum_edges.n_bins()
+        );
+        assert_eq!(
+            spectrum_edges.to_f_lambda(1.0).n_bins(),
+            spectrum_edges.n_bins()
+        );
     }
 }
