@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use ndarray::{Array1, ArrayView1};
 use thiserror::Error;
 
@@ -40,11 +42,7 @@ pub struct Grid<T: Float> {
 }
 
 impl<T: Float> Grid<T> {
-    pub fn new(
-        values: Array1<T>,
-        spacing: Spacing,
-        kind: GridKind,
-    ) -> Result<Self, GridError> {
+    pub fn new(values: Array1<T>, spacing: Spacing, kind: GridKind) -> Result<Self, GridError> {
         check_length(values.view())?;
         check_monotonic(values.view())?;
         if spacing == Spacing::Log {
@@ -60,11 +58,7 @@ impl<T: Float> Grid<T> {
     /// Construct a grid from raw values, auto-detecting whether the spacing is best
     /// described by `Log` (uniform in ln-space within `rel_tol`) or `Linear` (everything
     /// else). `rel_tol` is the allowed relative deviation of per-step spacing.
-    pub fn from_array(
-        values: Array1<T>,
-        rel_tol: T,
-        kind: GridKind,
-    ) -> Result<Self, GridError> {
+    pub fn from_array(values: Array1<T>, rel_tol: T, kind: GridKind) -> Result<Self, GridError> {
         check_length(values.view())?;
         check_monotonic(values.view())?;
         let all_positive = values.iter().all(|value| *value > T::zero());
@@ -130,6 +124,9 @@ impl<T: Float> Grid<T> {
         self.kind
     }
 
+    // Grid invariant (enforced by all constructors) guarantees len() >= 2, so an
+    // is_empty method would always return false and be misleading.
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.values.len()
     }
@@ -220,9 +217,12 @@ fn check_length<T: Float>(values: ArrayView1<T>) -> Result<(), GridError> {
 }
 
 fn check_monotonic<T: Float>(values: ArrayView1<T>) -> Result<(), GridError> {
+    // Using partial_cmp makes NaN handling explicit: any non-Less ordering
+    // (Equal, Greater, or None for NaN) is rejected.
     for i in 1..values.len() {
-        if !(values[i - 1] < values[i]) {
-            return Err(GridError::NotMonotonic);
+        match values[i - 1].partial_cmp(&values[i]) {
+            Some(Ordering::Less) => {}
+            _ => return Err(GridError::NotMonotonic),
         }
     }
     Ok(())
