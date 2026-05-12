@@ -4,6 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from . import overlap as overlap
+from . import photometry as photometry
 
 Spacing = Literal["linear", "log"]
 GridKind = Literal["centers", "edges"]
@@ -128,5 +129,13 @@ class Spectrum:
 
     def to_f_nu(self, speed_of_light: float) -> "Spectrum": ...
     def to_f_lambda(self, speed_of_light: float) -> "Spectrum": ...
+
+    def synthetic_photometry(
+        self,
+        *,
+        transmission_grid: Union[Grid, NDArray[Any]],
+        transmission_values: NDArray[Any],
+        convention: Literal["photon_counting", "energy_weighted"] = "photon_counting",
+    ) -> tuple[float, Optional[float], float]: ...
 
 

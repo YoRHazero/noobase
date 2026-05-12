@@ -1,10 +1,11 @@
+use ::noobase::photometry::PhotometryConvention;
 use ::noobase::{Grid as CoreGrid, GridKind, Spacing};
 use ndarray::Array1;
 use numpy::PyReadonlyArray1;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::grid::GridInner;
+use crate::grid::{GridInner, PyGrid};
 
 pub(crate) fn parse_spacing(spacing: &str) -> PyResult<Spacing> {
     match spacing {
@@ -76,6 +77,100 @@ pub(crate) fn grid_dtype_name(inner: &GridInner) -> &'static str {
     match inner {
         GridInner::F32(_) => "float32",
         GridInner::F64(_) => "float64",
+    }
+}
+
+pub(crate) fn parse_convention(value: &str) -> PyResult<PhotometryConvention> {
+    match value {
+        "photon_counting" => Ok(PhotometryConvention::PhotonCounting),
+        "energy_weighted" => Ok(PhotometryConvention::EnergyWeighted),
+        other => Err(PyValueError::new_err(format!(
+            "invalid convention {other:?}; expected one of \"photon_counting\", \"energy_weighted\""
+        ))),
+    }
+}
+
+/// Coerce a Python value into a `PyGrid`, matching the dtype of a paired
+/// array (e.g. transmission_values for transmission_grid). If the value is
+/// already a Grid, only the dtype is checked. If the value is an ndarray, it
+/// is interpreted as bin centers when its length equals `paired_array_length`
+/// and as bin edges when its length equals `paired_array_length + 1`.
+pub(crate) fn coerce_to_grid(
+    py_any: &Bound<'_, PyAny>,
+    paired_array_length: usize,
+    paired_array_dtype_is_f32: bool,
+    role_name: &str,
+) -> PyResult<PyGrid> {
+    if let Ok(grid) = py_any.extract::<PyGrid>() {
+        let grid_is_f32 = matches!(grid.inner, GridInner::F32(_));
+        if grid_is_f32 != paired_array_dtype_is_f32 {
+            let grid_dtype = if grid_is_f32 { "float32" } else { "float64" };
+            let paired_dtype = if paired_array_dtype_is_f32 {
+                "float32"
+            } else {
+                "float64"
+            };
+            return Err(dtype_mismatch_error(
+                grid_dtype,
+                paired_dtype,
+                &format!("{role_name} grid vs paired array"),
+            ));
+        }
+        return Ok(grid);
+    }
+
+    let centers_kind = GridKind::Centers;
+    let edges_kind = GridKind::Edges;
+    if paired_array_dtype_is_f32 {
+        let array = py_any.extract::<PyReadonlyArray1<'_, f32>>().map_err(|_| {
+            dtype_mismatch_error(
+                "float32",
+                "other",
+                &format!("{role_name} grid array vs paired array"),
+            )
+        })?;
+        let view = array.as_array();
+        let kind = if view.len() == paired_array_length {
+            centers_kind
+        } else if view.len() == paired_array_length + 1 {
+            edges_kind
+        } else {
+            return Err(PyValueError::new_err(format!(
+                "{role_name} grid array length {} does not match paired array length {} (centers) or {} (edges)",
+                view.len(),
+                paired_array_length,
+                paired_array_length + 1
+            )));
+        };
+        let owned: Array1<f32> = view.to_owned();
+        let grid = CoreGrid::<f32>::new(owned, Spacing::Linear, kind)
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(PyGrid::from_inner(GridInner::F32(grid)))
+    } else {
+        let array = py_any.extract::<PyReadonlyArray1<'_, f64>>().map_err(|_| {
+            dtype_mismatch_error(
+                "float64",
+                "other",
+                &format!("{role_name} grid array vs paired array"),
+            )
+        })?;
+        let view = array.as_array();
+        let kind = if view.len() == paired_array_length {
+            centers_kind
+        } else if view.len() == paired_array_length + 1 {
+            edges_kind
+        } else {
+            return Err(PyValueError::new_err(format!(
+                "{role_name} grid array length {} does not match paired array length {} (centers) or {} (edges)",
+                view.len(),
+                paired_array_length,
+                paired_array_length + 1
+            )));
+        };
+        let owned: Array1<f64> = view.to_owned();
+        let grid = CoreGrid::<f64>::new(owned, Spacing::Linear, kind)
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(PyGrid::from_inner(GridInner::F64(grid)))
     }
 }
 

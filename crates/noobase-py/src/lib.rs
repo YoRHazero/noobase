@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 mod grid;
 mod helpers;
 mod overlap;
+mod photometry;
 mod spectrum;
 
 use crate::grid::PyGrid;
@@ -13,5 +14,6 @@ fn _core(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyGrid>()?;
     module.add_class::<PySpectrum>()?;
     overlap::build_submodule(py, module)?;
+    photometry::build_submodule(py, module)?;
     Ok(())
 }
