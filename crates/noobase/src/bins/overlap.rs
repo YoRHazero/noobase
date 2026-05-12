@@ -165,6 +165,37 @@ pub fn rebin_variance<T: Float>(
     output
 }
 
+/// Geometric coverage fraction of each target bin by the source range. For
+/// each target bin `i`,
+/// ```text
+/// out[i] = (Σ_j overlap[i, j]) / target_width[i]   ∈ [0, 1]
+/// ```
+/// A target bin completely inside the source range yields 1.0; a target bin
+/// completely outside yields 0.0; a half-covered edge bin yields 0.5. This is
+/// the standard mask companion for [`rebin`] and [`rebin_variance`].
+pub fn coverage<T: Float>(source: &Grid<T>, target: &Grid<T>) -> Array1<T> {
+    let source_edges_grid = source.to_edges();
+    let target_edges_grid = target.to_edges();
+    let target_bin_count = target_edges_grid.len() - 1;
+    let target_edges = target_edges_grid.values();
+    let mut overlap_sum = Array1::<T>::zeros(target_bin_count);
+    for_each(
+        &source_edges_grid,
+        &target_edges_grid,
+        |target_index, _source_index, overlap_width| {
+            overlap_sum[target_index] = overlap_sum[target_index] + overlap_width;
+        },
+    );
+    let mut output = Array1::<T>::zeros(target_bin_count);
+    for target_index in 0..target_bin_count {
+        let target_width = target_edges[target_index + 1] - target_edges[target_index];
+        if target_width > T::zero() {
+            output[target_index] = overlap_sum[target_index] / target_width;
+        }
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,6 +396,41 @@ mod tests {
         let target = linear_edges(&[0.0, 1.5, 3.0]);
         let bad_variance = array![1.0_f64, 2.0]; // 2 != 3 source bins
         let _ = rebin_variance(&source, bad_variance.view(), &target);
+    }
+
+    #[test]
+    fn coverage_target_fully_inside_source() {
+        let source = linear_edges(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
+        let target = linear_edges(&[1.0, 2.5, 4.0]);
+        let cov = coverage(&source, &target);
+        assert_eq!(cov.len(), 2);
+        for value in cov.iter() {
+            assert!(approx_eq(*value, 1.0, TOL));
+        }
+    }
+
+    #[test]
+    fn coverage_target_disjoint_from_source() {
+        let source = linear_edges(&[0.0, 1.0, 2.0]);
+        let target = linear_edges(&[10.0, 11.0, 12.0]);
+        let cov = coverage(&source, &target);
+        assert_eq!(cov.len(), 2);
+        for value in cov.iter() {
+            assert!(approx_eq(*value, 0.0, TOL));
+        }
+    }
+
+    #[test]
+    fn coverage_half_covered_edge_bin() {
+        // Source spans [0, 4). Target bins: [-1, 1), [1, 3), [3, 5)
+        // -> coverage 0.5, 1.0, 0.5
+        let source = linear_edges(&[0.0, 1.0, 2.0, 3.0, 4.0]);
+        let target = linear_edges(&[-1.0, 1.0, 3.0, 5.0]);
+        let cov = coverage(&source, &target);
+        assert_eq!(cov.len(), 3);
+        assert!(approx_eq(cov[0], 0.5, TOL));
+        assert!(approx_eq(cov[1], 1.0, TOL));
+        assert!(approx_eq(cov[2], 0.5, TOL));
     }
 
     #[test]
