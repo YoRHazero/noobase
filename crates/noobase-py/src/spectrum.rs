@@ -18,6 +18,17 @@ pub(crate) enum SpectrumInner {
     F64(CoreSpectrum<f64>),
 }
 
+/// A 1-D spectrum: a wavelength Grid plus per-bin flux, optional 1-sigma
+/// error, and optional validity mask.
+///
+/// The mask convention is ``True = valid`` (the inverse of astropy's
+/// masked-array convention). All per-bin arrays share the wavelength Grid's
+/// dtype (``float32`` or ``float64``); ``flux`` determines the channel and
+/// every other input must match it.
+///
+/// Use ``rebin`` to resample onto a new wavelength axis, ``to_f_nu`` /
+/// ``to_f_lambda`` to convert between flux density conventions, and
+/// ``synthetic_photometry`` to integrate through a transmission curve.
 #[pyclass(name = "Spectrum", module = "noobase._core", skip_from_py_object)]
 pub struct PySpectrum {
     inner: SpectrumInner,
@@ -31,8 +42,48 @@ impl PySpectrum {
 
 #[pymethods]
 impl PySpectrum {
+    /// Construct a Spectrum from a wavelength axis and per-bin arrays.
+    ///
+    /// All arguments are keyword-only. The ``flux`` dtype (``float32`` or
+    /// ``float64``) determines the Spectrum's dtype; every other array
+    /// argument and the wavelength Grid must match.
+    ///
+    /// Parameters
+    /// ----------
+    /// wavelength : Grid or ndarray
+    ///     Wavelength axis. If a Grid is passed, ``spacing`` and ``kind``
+    ///     must not be supplied. If an ndarray is passed, the Grid is built
+    ///     internally using the given ``spacing`` and ``kind`` (defaulting
+    ///     to ``"linear"`` and ``"centers"``).
+    /// flux : ndarray
+    ///     1-D flux density per bin. Length must equal the wavelength bin
+    ///     count: ``len(wavelength)`` for ``kind="centers"`` or
+    ///     ``len(wavelength) - 1`` for ``kind="edges"``.
+    /// error : ndarray, optional
+    ///     1-sigma uncertainty per bin. Same length and dtype as ``flux``.
+    ///     Default is ``None``.
+    /// mask : ndarray of bool, optional
+    ///     Per-bin validity flag (``True = valid``, inverse of astropy's
+    ///     convention). Same length as ``flux``. Default is ``None``.
+    /// spacing : {"linear", "log"}, optional
+    ///     Spacing convention for the wavelength Grid when ``wavelength`` is
+    ///     an ndarray. Must be omitted when ``wavelength`` is a Grid.
+    /// kind : {"centers", "edges"}, optional
+    ///     Bin convention for the wavelength Grid when ``wavelength`` is an
+    ///     ndarray. Must be omitted when ``wavelength`` is a Grid.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If dtypes mismatch across inputs, array lengths are inconsistent
+    ///     with the wavelength bin count, ``spacing``/``kind`` are passed
+    ///     together with a Grid wavelength, or the wavelength values fail
+    ///     the Grid invariants (strictly increasing, positive under log).
     #[new]
     #[pyo3(signature = (*, wavelength, flux, error=None, mask=None, spacing=None, kind=None))]
+    #[pyo3(
+        text_signature = "(*, wavelength, flux, error=None, mask=None, spacing=None, kind=None)"
+    )]
     fn new(
         wavelength: &Bound<'_, PyAny>,
         flux: &Bound<'_, PyAny>,
@@ -101,6 +152,13 @@ impl PySpectrum {
         }
     }
 
+    /// The wavelength axis.
+    ///
+    /// Returns
+    /// -------
+    /// Grid
+    ///     A clone of the wavelength Grid. dtype matches the Spectrum's
+    ///     dtype.
     #[getter]
     fn wavelength(&self) -> PyGrid {
         let inner = match &self.inner {
@@ -110,6 +168,13 @@ impl PySpectrum {
         PyGrid::from_inner(inner)
     }
 
+    /// The flux density array.
+    ///
+    /// Returns
+    /// -------
+    /// ndarray
+    ///     A new copy of the per-bin flux density. dtype matches the
+    ///     Spectrum's dtype.
     #[getter]
     fn flux<'py>(&self, py: Python<'py>) -> Bound<'py, PyAny> {
         match &self.inner {
@@ -118,6 +183,14 @@ impl PySpectrum {
         }
     }
 
+    /// The 1-sigma uncertainty array, if present.
+    ///
+    /// Returns
+    /// -------
+    /// ndarray or None
+    ///     A new copy of the per-bin 1-sigma uncertainty, or ``None`` if the
+    ///     Spectrum was constructed without an error array. dtype matches
+    ///     the Spectrum's dtype.
     #[getter]
     fn error<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyAny>> {
         match &self.inner {
@@ -130,6 +203,14 @@ impl PySpectrum {
         }
     }
 
+    /// The per-bin validity mask, if present.
+    ///
+    /// Returns
+    /// -------
+    /// ndarray of bool or None
+    ///     A new copy of the per-bin validity flags (``True = valid``,
+    ///     inverse of astropy's masked-array convention), or ``None`` if no
+    ///     mask was supplied at construction.
     #[getter]
     fn mask<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyAny>> {
         let mask_view = match &self.inner {
@@ -139,6 +220,13 @@ impl PySpectrum {
         mask_view.map(|view| view.to_pyarray(py).into_any())
     }
 
+    /// Number of bins in the spectrum.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The length of the ``flux`` array, equivalently the wavelength
+    ///     Grid's bin count.
     #[getter]
     fn n_bins(&self) -> usize {
         match &self.inner {
@@ -147,6 +235,14 @@ impl PySpectrum {
         }
     }
 
+    /// The numpy dtype of the Spectrum's arrays.
+    ///
+    /// Returns
+    /// -------
+    /// numpy.dtype
+    ///     Either ``numpy.dtype('float32')`` or ``numpy.dtype('float64')``.
+    ///     All per-bin arrays (flux, error, wavelength values) share this
+    ///     dtype.
     #[getter]
     fn dtype<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDescr> {
         match &self.inner {
@@ -155,7 +251,54 @@ impl PySpectrum {
         }
     }
 
+    /// Resample the spectrum onto a target wavelength axis.
+    ///
+    /// Flux is propagated via overlap-weighted averaging (density-conserving:
+    /// the integral of ``flux * bin_width`` is preserved over the region of
+    /// overlap). Error, if present, is propagated by squaring to variance,
+    /// applying the same overlap operator assuming independent source bins,
+    /// and taking the square root; the result is the marginal 1-sigma per
+    /// target bin. Mask, if present, is propagated as logical AND: a target
+    /// bin is valid iff every source bin with non-zero overlap into it is
+    /// valid.
+    ///
+    /// Parameters
+    /// ----------
+    /// target : Grid or ndarray
+    ///     Target wavelength axis. If an ndarray is passed, ``spacing`` and
+    ///     ``kind`` must be supplied (each defaults to ``"linear"`` /
+    ///     ``"centers"`` when omitted but the dtype is read from the array).
+    ///     dtype must match the Spectrum's dtype.
+    /// spacing : {"linear", "log"}, optional
+    ///     Spacing convention for building a Grid from ``target``. Must be
+    ///     omitted when ``target`` is already a Grid.
+    /// kind : {"centers", "edges"}, optional
+    ///     Bin convention for building a Grid from ``target``. Must be
+    ///     omitted when ``target`` is already a Grid.
+    ///
+    /// Returns
+    /// -------
+    /// Spectrum
+    ///     A new Spectrum on the target wavelength axis.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``target`` dtype does not match the Spectrum's dtype, or if
+    ///     ``spacing``/``kind`` are passed together with a Grid ``target``.
+    ///
+    /// Notes
+    /// -----
+    /// When the target is finer than the source (upsampling), neighboring
+    /// target bins drawing from the same source bin are strongly correlated.
+    /// The per-bin sigma values returned here are still individually correct
+    /// as marginals, but downstream operations that assume independent bins
+    /// (for example summing under quadrature, or ``synthetic_photometry`` on
+    /// the upsampled spectrum) will underestimate the true uncertainty. See
+    /// ``Spectrum.synthetic_photometry`` and ``photometry.synthetic`` for
+    /// the same caveat.
     #[pyo3(signature = (target, *, spacing=None, kind=None))]
+    #[pyo3(text_signature = "(self, target, *, spacing=None, kind=None)")]
     fn rebin(
         &self,
         target: &Bound<'_, PyAny>,
@@ -201,6 +344,32 @@ impl PySpectrum {
         Ok(PySpectrum::from_inner(output_inner))
     }
 
+    /// Convert flux density from f_lambda to f_nu.
+    ///
+    /// Applies ``f_nu = f_lambda * lambda^2 / c`` per bin, using each bin's
+    /// center wavelength. The wavelength Grid and mask are preserved; the
+    /// error array, if present, scales by the same factor element-wise.
+    ///
+    /// Parameters
+    /// ----------
+    /// speed_of_light : float
+    ///     Speed of light expressed in the wavelength axis's length unit per
+    ///     second. For example, with the wavelength in angstroms pass
+    ///     ``2.998e18`` (Å/s). noobase does not track units; consistency is
+    ///     the caller's responsibility.
+    ///
+    /// Returns
+    /// -------
+    /// Spectrum
+    ///     A new Spectrum with the converted flux density.
+    ///
+    /// Notes
+    /// -----
+    /// This method does not check whether the input is in fact f_lambda; it
+    /// unconditionally applies the conversion factor. The caller is
+    /// responsible for tracking which density the Spectrum currently
+    /// represents.
+    #[pyo3(text_signature = "(self, speed_of_light)")]
     fn to_f_nu(&self, speed_of_light: f64) -> PySpectrum {
         let inner = match &self.inner {
             SpectrumInner::F64(spectrum) => SpectrumInner::F64(spectrum.to_f_nu(speed_of_light)),
@@ -214,6 +383,32 @@ impl PySpectrum {
         PySpectrum::from_inner(inner)
     }
 
+    /// Convert flux density from f_nu to f_lambda.
+    ///
+    /// Applies ``f_lambda = f_nu * c / lambda^2`` per bin, using each bin's
+    /// center wavelength. The wavelength Grid and mask are preserved; the
+    /// error array, if present, scales by the same factor element-wise.
+    ///
+    /// Parameters
+    /// ----------
+    /// speed_of_light : float
+    ///     Speed of light expressed in the wavelength axis's length unit per
+    ///     second. For example, with the wavelength in angstroms pass
+    ///     ``2.998e18`` (Å/s). noobase does not track units; consistency is
+    ///     the caller's responsibility.
+    ///
+    /// Returns
+    /// -------
+    /// Spectrum
+    ///     A new Spectrum with the converted flux density.
+    ///
+    /// Notes
+    /// -----
+    /// This method does not check whether the input is in fact f_nu; it
+    /// unconditionally applies the conversion factor. The caller is
+    /// responsible for tracking which density the Spectrum currently
+    /// represents.
+    #[pyo3(text_signature = "(self, speed_of_light)")]
     fn to_f_lambda(&self, speed_of_light: f64) -> PySpectrum {
         let inner = match &self.inner {
             SpectrumInner::F64(spectrum) => {
@@ -229,7 +424,62 @@ impl PySpectrum {
         PySpectrum::from_inner(inner)
     }
 
+    /// Compute synthetic photometry through a transmission curve.
+    ///
+    /// Convenience wrapper around ``photometry.synthetic`` that reuses the
+    /// Spectrum's wavelength, flux, and (optional) error. Returns the
+    /// band-averaged flux density, the propagated 1-sigma uncertainty (only
+    /// when the Spectrum has an error array), and the geometric coverage of
+    /// the filter by the spectrum.
+    ///
+    /// Parameters
+    /// ----------
+    /// transmission_grid : Grid or ndarray
+    ///     Filter wavelength axis. If an ndarray is passed, its length must
+    ///     equal ``len(transmission_values)`` (centers) or
+    ///     ``len(transmission_values) + 1`` (edges); spacing is assumed
+    ///     linear and ``kind`` is inferred from the length match. For
+    ///     log-spaced filters, pass a pre-built Grid. dtype must match the
+    ///     Spectrum's dtype.
+    /// transmission_values : ndarray
+    ///     Filter transmission per bin. dtype must match the Spectrum's
+    ///     dtype.
+    /// convention : {"photon_counting", "energy_weighted"}, optional
+    ///     Photon-counting (default) is appropriate for photon-counting
+    ///     detectors such as CCDs and HgCdTe arrays (including JWST NIRCam).
+    ///     Energy-weighted is appropriate for bolometric / energy-integrating
+    ///     detectors.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (float, float or None, float)
+    ///     ``(band_flux, band_error, coverage)``. ``band_error`` is ``None``
+    ///     when the Spectrum has no error array. ``coverage`` is the
+    ///     fraction of the filter's transmission integral probed by the
+    ///     spectrum (1.0 means full coverage; a value below 1.0 means the
+    ///     spectrum does not span the full filter and ``band_flux`` is
+    ///     biased low).
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If dtypes mismatch across inputs, array lengths are inconsistent,
+    ///     ``convention`` is invalid, or the spectrum does not overlap the
+    ///     filter in wavelength.
+    ///
+    /// Notes
+    /// -----
+    /// The error is propagated assuming spectrum bins are statistically
+    /// independent. The transmission curve's bin density does not affect
+    /// this assumption — it only enters the deterministic weights. The
+    /// assumption is violated if the spectrum was previously upsampled (for
+    /// example via ``Spectrum.rebin`` onto a finer grid), in which case the
+    /// returned ``band_error`` underestimates the true uncertainty. See
+    /// ``Spectrum.rebin`` for the same caveat.
     #[pyo3(signature = (*, transmission_grid, transmission_values, convention="photon_counting"))]
+    #[pyo3(
+        text_signature = "(self, *, transmission_grid, transmission_values, convention=\"photon_counting\")"
+    )]
     fn synthetic_photometry<'py>(
         &self,
         py: Python<'py>,

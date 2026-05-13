@@ -7,8 +7,44 @@ use pyo3::prelude::*;
 use crate::grid::{GridInner, PyGrid};
 use crate::helpers::{dtype_mismatch_error, grid_dtype_name};
 
+/// Flux-density-conserving rebin from a source grid onto a target grid.
+///
+/// For each target bin ``i``, the output is
+/// ``out[i] = (sum_j overlap[i, j] * source_values[j]) / target_width[i]``,
+/// where ``overlap[i, j]`` is the linear-space intersection width between
+/// target bin ``i`` and source bin ``j`` and ``target_width[i]`` is the full
+/// linear-space width of target bin ``i``. This preserves the integral
+/// ``sum_i out[i] * target_width[i]`` over the region of overlap, so the
+/// values behave like a density.
+///
+/// Target bins partially or fully outside the source range are NOT treated
+/// as errors: the sum is taken over whatever overlap exists. Use
+/// ``coverage`` to identify and mask such bins.
+///
+/// Parameters
+/// ----------
+/// source_grid : Grid
+///     Source wavelength axis.
+/// source_values : ndarray
+///     Per-bin source density. Length must equal the source bin count and
+///     dtype must match ``source_grid``.
+/// target_grid : Grid
+///     Target wavelength axis. dtype must match ``source_grid``.
+///
+/// Returns
+/// -------
+/// ndarray
+///     Rebinned values, length equal to the target bin count. dtype matches
+///     the inputs.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If dtypes mismatch across inputs, or if ``source_values`` length does
+///     not match the source bin count.
 #[pyfunction]
 #[pyo3(name = "rebin")]
+#[pyo3(text_signature = "(source_grid, source_values, target_grid)")]
 fn overlap_rebin<'py>(
     py: Python<'py>,
     source_grid: &PyGrid,
@@ -58,8 +94,43 @@ fn overlap_rebin<'py>(
     }
 }
 
+/// Variance propagation for ``rebin`` assuming independent source bins.
+///
+/// For each target bin ``i``, the output is
+/// ``out[i] = sum_j (overlap[i, j] / target_width[i])^2 * source_variance[j]``.
+/// As with ``rebin``, partial-coverage target bins are not errors; their
+/// variance is computed against the partial sum and should usually be
+/// masked by the caller using ``coverage``.
+///
+/// Parameters
+/// ----------
+/// source_grid : Grid
+///     Source wavelength axis.
+/// source_variance : ndarray
+///     Per-bin source variance (1-sigma squared). Length must equal the
+///     source bin count and dtype must match ``source_grid``.
+/// target_grid : Grid
+///     Target wavelength axis. dtype must match ``source_grid``.
+///
+/// Returns
+/// -------
+/// ndarray
+///     Propagated variance per target bin. dtype matches the inputs.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If dtypes mismatch across inputs, or if ``source_variance`` length
+///     does not match the source bin count.
+///
+/// Notes
+/// -----
+/// Independence is an assumption, not a property of the operator: if the
+/// caller's source bins are correlated (for example because the spectrum
+/// was previously upsampled), the output underestimates the true variance.
 #[pyfunction]
 #[pyo3(name = "rebin_variance")]
+#[pyo3(text_signature = "(source_grid, source_variance, target_grid)")]
 fn overlap_rebin_variance<'py>(
     py: Python<'py>,
     source_grid: &PyGrid,
@@ -117,8 +188,34 @@ fn overlap_rebin_variance<'py>(
     }
 }
 
+/// Geometric coverage fraction of each target bin by the source range.
+///
+/// For each target bin ``i``,
+/// ``out[i] = (sum_j overlap[i, j]) / target_width[i]`` lies in ``[0, 1]``.
+/// A target bin completely inside the source range yields 1.0; one
+/// completely outside yields 0.0; a half-covered edge bin yields 0.5. This
+/// is the standard mask companion for ``rebin`` and ``rebin_variance``.
+///
+/// Parameters
+/// ----------
+/// source_grid : Grid
+///     Source wavelength axis.
+/// target_grid : Grid
+///     Target wavelength axis. dtype must match ``source_grid``.
+///
+/// Returns
+/// -------
+/// ndarray
+///     Coverage fraction per target bin, in ``[0, 1]``. dtype matches the
+///     inputs.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If dtypes mismatch across inputs.
 #[pyfunction]
 #[pyo3(name = "coverage")]
+#[pyo3(text_signature = "(source_grid, target_grid)")]
 fn overlap_coverage<'py>(
     py: Python<'py>,
     source_grid: &PyGrid,

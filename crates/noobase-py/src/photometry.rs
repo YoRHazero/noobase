@@ -28,9 +28,72 @@ fn detect_float_dtype_is_f32(value: &Bound<'_, PyAny>, role: &str) -> PyResult<b
     }
 }
 
+/// Compute synthetic photometry of a spectrum through a transmission curve.
+///
+/// Returns the band-averaged flux density, the propagated 1-sigma
+/// uncertainty (only when ``spectrum_error`` is given), and the geometric
+/// coverage of the filter by the spectrum.
+///
+/// All arguments are keyword-only. The dtype channel (``float32`` or
+/// ``float64``) is determined by ``spectrum_flux``; every other array
+/// argument must match.
+///
+/// Parameters
+/// ----------
+/// spectrum_grid : Grid or ndarray
+///     Spectrum wavelength axis. If an ndarray is passed, its length must
+///     equal ``len(spectrum_flux)`` (centers) or ``len(spectrum_flux) + 1``
+///     (edges); spacing is assumed linear and ``kind`` is inferred from the
+///     length match. For log-spaced spectra, pass a pre-built Grid.
+/// spectrum_flux : ndarray
+///     Flux density per bin. Determines the dtype channel for the whole
+///     call; all other arrays must match.
+/// spectrum_error : ndarray, optional
+///     1-sigma uncertainty per bin. Same length and dtype as
+///     ``spectrum_flux``. Default is ``None``.
+/// transmission_grid : Grid or ndarray
+///     Filter wavelength axis. Same dtype and length-match rules as
+///     ``spectrum_grid``, paired with ``transmission_values``.
+/// transmission_values : ndarray
+///     Filter transmission per bin. Same dtype as ``spectrum_flux``.
+/// convention : {"photon_counting", "energy_weighted"}, optional
+///     Photon-counting (default) is appropriate for photon-counting
+///     detectors such as CCDs and HgCdTe arrays (including JWST NIRCam).
+///     Energy-weighted is appropriate for bolometric / energy-integrating
+///     detectors.
+///
+/// Returns
+/// -------
+/// tuple of (float, float or None, float)
+///     ``(band_flux, band_error, coverage)``. ``band_error`` is ``None``
+///     when ``spectrum_error`` was not provided. ``coverage`` is the
+///     fraction of the filter's transmission integral probed by the
+///     spectrum (1.0 means full coverage; a value below 1.0 means the
+///     spectrum does not span the full filter and ``band_flux`` is biased
+///     low).
+///
+/// Raises
+/// ------
+/// ValueError
+///     If dtypes mismatch across inputs, array lengths are inconsistent,
+///     ``convention`` is invalid, or the spectrum does not overlap the
+///     filter in wavelength.
+///
+/// Notes
+/// -----
+/// The error is propagated assuming spectrum bins are statistically
+/// independent. The transmission curve's bin density does not affect this
+/// assumption — it only enters the deterministic weights. The assumption
+/// is violated if the spectrum was previously upsampled (for example via
+/// ``Spectrum.rebin`` onto a finer grid), in which case the returned
+/// ``band_error`` underestimates the true uncertainty. See
+/// ``Spectrum.rebin`` for the same caveat.
 #[pyfunction]
 #[pyo3(name = "synthetic")]
 #[pyo3(signature = (*, spectrum_grid, spectrum_flux, spectrum_error=None, transmission_grid, transmission_values, convention="photon_counting"))]
+#[pyo3(
+    text_signature = "(*, spectrum_grid, spectrum_flux, spectrum_error=None, transmission_grid, transmission_values, convention=\"photon_counting\")"
+)]
 fn synthetic_function<'py>(
     py: Python<'py>,
     spectrum_grid: &Bound<'py, PyAny>,
@@ -178,6 +241,16 @@ pub(crate) enum SyntheticOperatorInner {
     F64(core_photometry::SyntheticOperator<f64>),
 }
 
+/// Pre-built synthetic photometry operator with cached weights.
+///
+/// Amortizes the cost of grid intersection and transmission weighting for
+/// repeated evaluation against many spectra that share the same wavelength
+/// axis and transmission curve. ``apply`` then becomes a small inner
+/// product. Useful for SED-fitting inner loops.
+///
+/// The operator caches both the deterministic weights and the geometric
+/// coverage (available via the ``coverage`` property), so per-spectrum
+/// calls do not recompute either.
 #[pyclass(name = "SyntheticOperator", module = "noobase._core.photometry")]
 pub struct PySyntheticOperator {
     inner: SyntheticOperatorInner,
@@ -185,8 +258,44 @@ pub struct PySyntheticOperator {
 
 #[pymethods]
 impl PySyntheticOperator {
+    /// Construct an operator from a spectrum wavelength axis and a
+    /// transmission curve.
+    ///
+    /// All arguments are keyword-only. The dtype channel (``float32`` or
+    /// ``float64``) is determined by ``spectrum_grid``; ``transmission_values``
+    /// and ``transmission_grid`` must match.
+    ///
+    /// Parameters
+    /// ----------
+    /// spectrum_grid : Grid
+    ///     Spectrum wavelength axis. Must be a Grid (an ndarray is not
+    ///     accepted here because there is no paired array at construction
+    ///     time from which to infer centers vs edges).
+    /// transmission_grid : Grid or ndarray
+    ///     Filter wavelength axis. If an ndarray is passed, its length
+    ///     must equal ``len(transmission_values)`` (centers) or
+    ///     ``len(transmission_values) + 1`` (edges).
+    /// transmission_values : ndarray
+    ///     Filter transmission per bin. Determines the operator's dtype
+    ///     paired with ``spectrum_grid``.
+    /// convention : {"photon_counting", "energy_weighted"}, optional
+    ///     Photon-counting (default) is appropriate for photon-counting
+    ///     detectors such as CCDs and HgCdTe arrays (including JWST
+    ///     NIRCam). Energy-weighted is appropriate for bolometric /
+    ///     energy-integrating detectors.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``spectrum_grid`` is not a Grid, dtypes mismatch across
+    ///     inputs, array lengths are inconsistent, ``convention`` is
+    ///     invalid, or the spectrum grid does not overlap the filter in
+    ///     wavelength.
     #[new]
     #[pyo3(signature = (*, spectrum_grid, transmission_grid, transmission_values, convention="photon_counting"))]
+    #[pyo3(
+        text_signature = "(*, spectrum_grid, transmission_grid, transmission_values, convention=\"photon_counting\")"
+    )]
     fn new(
         spectrum_grid: &Bound<'_, PyAny>,
         transmission_grid: &Bound<'_, PyAny>,
@@ -280,7 +389,42 @@ impl PySyntheticOperator {
         }
     }
 
+    /// Apply the operator to a spectrum flux array.
+    ///
+    /// Returns the band-averaged flux density and, optionally, the
+    /// propagated 1-sigma uncertainty. The geometric coverage is fixed at
+    /// construction time and accessible via the ``coverage`` property; it
+    /// is not returned here.
+    ///
+    /// Parameters
+    /// ----------
+    /// spectrum_flux : ndarray
+    ///     Flux density per bin. Length must equal the operator's spectrum
+    ///     bin count and dtype must match the operator's dtype.
+    /// spectrum_error : ndarray, optional
+    ///     1-sigma uncertainty per bin. Same length and dtype as
+    ///     ``spectrum_flux``. Default is ``None``.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (float, float or None)
+    ///     ``(band_flux, band_error)``. ``band_error`` is ``None`` when
+    ///     ``spectrum_error`` was not provided.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If dtypes mismatch with the operator, or if array lengths do not
+    ///     match the operator's spectrum bin count.
+    ///
+    /// Notes
+    /// -----
+    /// As with ``photometry.synthetic``, the error is propagated assuming
+    /// spectrum bins are statistically independent; the assumption is
+    /// violated for spectra that were previously upsampled via
+    /// ``Spectrum.rebin``. See ``Spectrum.rebin`` for the same caveat.
     #[pyo3(signature = (spectrum_flux, *, spectrum_error=None))]
+    #[pyo3(text_signature = "(self, spectrum_flux, *, spectrum_error=None)")]
     fn apply<'py>(
         &self,
         py: Python<'py>,
@@ -393,6 +537,16 @@ impl PySyntheticOperator {
         }
     }
 
+    /// Geometric coverage of the filter by the operator's spectrum grid.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///     Fraction of the filter's transmission integral probed by the
+    ///     spectrum grid, in ``[0, 1]``. A value below 1.0 means the
+    ///     spectrum grid does not span the full filter and band fluxes
+    ///     produced by ``apply`` are biased low. SED-fitting callers should
+    ///     threshold on this (for example, require coverage > 0.999).
     #[getter]
     fn coverage(&self) -> f64 {
         match &self.inner {
@@ -401,6 +555,13 @@ impl PySyntheticOperator {
         }
     }
 
+    /// The numpy dtype of the operator's cached weights.
+    ///
+    /// Returns
+    /// -------
+    /// numpy.dtype
+    ///     Either ``numpy.dtype('float32')`` or ``numpy.dtype('float64')``.
+    ///     Arrays passed to ``apply`` must match this dtype.
     #[getter]
     fn dtype<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDescr> {
         match &self.inner {
