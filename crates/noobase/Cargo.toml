@@ -3,7 +3,12 @@ name = "noobase"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Foundational pure-function utilities"
+authors.workspace = true
+repository.workspace = true
+description = "Foundational pure-function utilities for astronomy analysis"
+readme = "README.md"
+keywords = ["astronomy", "spectroscopy", "photometry", "rebin", "scientific"]
+categories = ["science"]
 
 [dependencies]
 ndarray = { workspace = true }

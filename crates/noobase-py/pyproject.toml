@@ -4,16 +4,34 @@ build-backend = "maturin"
 
 [project]
 name = "noobase"
-version = "0.1.0"
-description = "Foundational pure-function utilities (Python bindings)"
-requires-python = ">=3.14"
+version = "0.0.1"
+description = "Foundational pure-function utilities for astronomy analysis"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "zchao", email = "zchao@icrr.u-tokyo.ac.jp" }
+]
+keywords = ["astronomy", "spectroscopy", "photometry", "rebin"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
     "numpy>=2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/YoRHazero/noobase"
+Repository = "https://github.com/YoRHazero/noobase"
+Issues = "https://github.com/YoRHazero/noobase/issues"
 
 [tool.maturin]
 module-name = "noobase._core"

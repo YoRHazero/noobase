@@ -3,9 +3,12 @@ resolver = "2"
 members = ["crates/noobase", "crates/noobase-py"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 license = "MIT"
+authors = ["zchao <zchao@icrr.u-tokyo.ac.jp>"]
+repository = "https://github.com/YoRHazero/noobase"
+description = "Foundational pure-function utilities for astronomy analysis"
 
 [workspace.dependencies]
 noobase = { path = "crates/noobase" }
