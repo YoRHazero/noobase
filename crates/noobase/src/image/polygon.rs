@@ -15,8 +15,9 @@
 
 use smallvec::SmallVec;
 
-/// A 2-D point in input-pixel coordinates.
-pub type Point = [f64; 2];
+/// A 2-D point in input-pixel coordinates. Crate-internal because the
+/// polygon primitives are an implementation detail of `image::reproject`.
+pub(crate) type Point = [f64; 2];
 
 /// Inline capacity for clipped polygons. A convex unit-cell clip of a
 /// 4-vertex subject polygon yields at most 8 vertices in general (each
@@ -24,8 +25,9 @@ pub type Point = [f64; 2];
 /// is the natural inline budget.
 const CLIPPED_INLINE: usize = 8;
 
-/// Output vertex buffer type for `clip_quad_against_unit_cell`.
-pub type ClippedPolygon = SmallVec<[Point; CLIPPED_INLINE]>;
+/// Vertex buffer used inside the clipper. Kept private so `smallvec`
+/// does not leak into the crate's public API.
+type ClippedPolygon = SmallVec<[Point; CLIPPED_INLINE]>;
 
 /// Edge of the unit cell, used to drive the four clipping passes.
 #[derive(Clone, Copy)]
@@ -84,10 +86,10 @@ impl CellEdge {
 /// The subject polygon is allowed to wind in either direction and may
 /// be non-convex; the clip polygon (the unit cell) is convex, which is
 /// all Sutherland-Hodgman requires.
-pub fn clip_quad_against_unit_cell(
+pub(crate) fn clip_quad_against_unit_cell(
     quad: &[Point; 4],
     cell_origin: (i32, i32),
-) -> ClippedPolygon {
+) -> SmallVec<[Point; 8]> {
     let (column, row) = cell_origin;
     let x_min = column as f64;
     let x_max = x_min + 1.0;
@@ -139,7 +141,7 @@ pub fn clip_quad_against_unit_cell(
 /// formula. Positive for counter-clockwise winding, negative for
 /// clockwise winding, zero for degenerate (collinear or zero-vertex)
 /// inputs. Callers that only need a magnitude should take `.abs()`.
-pub fn signed_area(polygon: &[Point]) -> f64 {
+pub(crate) fn signed_area(polygon: &[Point]) -> f64 {
     if polygon.len() < 3 {
         return 0.0;
     }
