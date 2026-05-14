@@ -6,7 +6,7 @@ composed transforms, mock WCSs in tests, and FITS-WCS / gwcs objects'
 ``pixel_to_world_values`` / ``world_to_pixel_values`` methods.
 """
 
-from typing import Callable, Optional
+from typing import Callable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -17,7 +17,7 @@ def make_pixel_corners(
     *,
     target_pixel_to_world: Callable,
     source_world_to_pixel: Callable,
-    coarse_step: Optional[tuple[int, int]] = None,
+    coarse_step: tuple[int, int] | None = None,
 ) -> NDArray[np.float64]:
     """Build the ``pixel_corners`` array consumed by ``reproject_exact``.
 
