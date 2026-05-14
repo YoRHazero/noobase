@@ -1,13 +1,15 @@
-"""Image-domain primitives (planar, no WCS)."""
+"""Build the ``pixel_corners`` array consumed by ``reproject_exact``.
+
+Pure Python — no astropy, gwcs, or PyO3 dependency. Any pair of
+callables matching the documented signatures will work, including
+composed transforms, mock WCSs in tests, and FITS-WCS / gwcs objects'
+``pixel_to_world_values`` / ``world_to_pixel_values`` methods.
+"""
 
 from typing import Callable
 
 import numpy as np
 from numpy.typing import NDArray
-
-from noobase._core.image import reproject_exact
-
-__all__ = ["make_pixel_corners", "reproject_exact"]
 
 
 def make_pixel_corners(
@@ -24,12 +26,6 @@ def make_pixel_corners(
     system. The half-pixel corner offset required by the astropy / gwcs
     convention (integer ``(x, y)`` is the *center* of a pixel) is applied
     internally so the caller does not have to remember it.
-
-    This helper does NOT depend on astropy or gwcs. Any pair of
-    callables matching the documented signatures will work, including
-    composed transforms, mock WCSs in tests, and FITS-WCS / gwcs
-    objects' ``pixel_to_world_values`` / ``world_to_pixel_values``
-    methods.
 
     Parameters
     ----------
