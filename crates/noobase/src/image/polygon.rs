@@ -10,8 +10,11 @@
 //! against a single unit cell `[x0, x0 + 1] x [y0, y0 + 1]` where the
 //! integers `(x0, y0)` index one input pixel after the internal
 //! half-pixel shift applied by the reprojection driver. The subject
-//! polygon is allowed to be non-convex; Sutherland-Hodgman only requires
-//! the clip polygon (the unit cell) to be convex.
+//! polygon is assumed to be convex — the projection of one output pixel
+//! into one input pixel grid is always convex under any reasonable WCS
+//! pair, since both grids are smooth deformations of each other over the
+//! pixel scale. Sutherland-Hodgman further requires the clip polygon
+//! (the unit cell) to be convex, which it trivially is.
 
 use smallvec::SmallVec;
 
@@ -83,9 +86,11 @@ impl CellEdge {
 /// Returns the clipped polygon as a `SmallVec<[Point; 8]>`. An empty
 /// return means the subject polygon does not overlap the cell.
 ///
-/// The subject polygon is allowed to wind in either direction and may
-/// be non-convex; the clip polygon (the unit cell) is convex, which is
-/// all Sutherland-Hodgman requires.
+/// The subject polygon is assumed to be convex (the projection of one
+/// output pixel into the input pixel grid is convex under any reasonable
+/// WCS pair). Winding direction (clockwise or counter-clockwise) does
+/// not matter; only the magnitude of the resulting area is consumed by
+/// the reprojection driver.
 pub(crate) fn clip_quad_against_unit_cell(
     quad: &[Point; 4],
     cell_origin: (i32, i32),
