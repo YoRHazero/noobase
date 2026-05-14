@@ -33,14 +33,25 @@
 //!   makes the polygon partition watertight.
 //!
 //! - **NaN semantics.** Any NaN in the four corners of an output pixel
-//!   produces `(NaN, 0)` for that output. NaN values inside the
-//!   contributing input pixels are excluded from both numerator and
-//!   denominator (NaN-as-mask).
+//!   produces `image = NaN, footprint = 0, weight = 0`. NaN values
+//!   inside the contributing input pixels are excluded from both the
+//!   numerator and the *valid* denominator (`weight`), but still count
+//!   toward the purely geometric `footprint`.
 //!
 //! - **Surface brightness conservation.** The default reduction is the
-//!   area-weighted mean, which conserves surface brightness. For total
-//!   flux, multiply the output image by the returned weight and by the
-//!   output pixel area in input-pixel units.
+//!   area-weighted mean over the valid (non-NaN) input area, which
+//!   conserves surface brightness. For total flux, multiply the output
+//!   image by `weight` and by the output pixel area in input-pixel
+//!   units.
+//!
+//! - **Footprint vs weight.** The output exposes two coverage arrays.
+//!   `footprint` is the pure geometric overlap fraction between the
+//!   output pixel and the input image bounds (independent of data
+//!   validity). `weight` is the fraction of the output pixel that
+//!   contributed *valid* (non-NaN) input. Invariant: `weight <=
+//!   footprint`; with no NaN inputs they are equal. The ratio
+//!   `weight / footprint` (where `footprint > 0`) is the fraction of
+//!   the covered region that was free of NaN.
 
 use ndarray::{Array2, ArrayView2, ArrayView3, ArrayViewMut1, Axis};
 use rayon::prelude::*;
@@ -56,9 +67,16 @@ pub struct ReprojectExactOutput {
     /// Shape: `(H_out, W_out)`. Pixels that received no valid input
     /// contribution are `NaN`.
     pub image: Array2<f64>,
-    /// Per-output-pixel overlap fraction in `[0, 1]`: the ratio of the
-    /// in-bounds, non-NaN input area to the area of the output pixel
-    /// projected into input-pixel space. Shape: `(H_out, W_out)`.
+    /// Pure geometric overlap fraction in `[0, 1]`: the ratio of the
+    /// in-bounds input area covered by the output pixel to the area of
+    /// the output pixel projected into input-pixel space. Independent
+    /// of data validity (NaN input pixels still count toward this).
+    /// Shape: `(H_out, W_out)`.
+    pub footprint: Array2<f64>,
+    /// Valid overlap fraction in `[0, 1]`: same numerator as
+    /// `footprint` but restricted to non-NaN input pixels. This is the
+    /// effective weight that fed the surface-brightness average.
+    /// Always `<= footprint`. Shape: `(H_out, W_out)`.
     pub weight: Array2<f64>,
 }
 
@@ -128,21 +146,24 @@ pub fn reproject_exact<T: Float>(
     let height_out = rows - 1;
     let width_out = cols - 1;
     let mut image_out = Array2::<f64>::from_elem((height_out, width_out), f64::NAN);
+    let mut footprint = Array2::<f64>::zeros((height_out, width_out));
     let mut weight = Array2::<f64>::zeros((height_out, width_out));
 
     // Rows are independent: each output row only reads `image_in_f64`
     // and the slice of `pixel_corners` between rows `i_out` and
-    // `i_out + 1`, and only writes its own row of `image_out` /
-    // `weight`. Drive them in parallel via rayon.
+    // `i_out + 1`, and only writes its own row of `image_out`,
+    // `footprint`, and `weight`. Drive them in parallel via rayon.
     image_out
         .axis_iter_mut(Axis(0))
         .into_par_iter()
+        .zip(footprint.axis_iter_mut(Axis(0)).into_par_iter())
         .zip(weight.axis_iter_mut(Axis(0)).into_par_iter())
         .enumerate()
-        .for_each(|(row_index, (row_image, row_weight))| {
+        .for_each(|(row_index, ((row_image, row_footprint), row_weight))| {
             process_output_row(
                 row_index,
                 row_image,
+                row_footprint,
                 row_weight,
                 image_in_f64.view(),
                 pixel_corners,
@@ -151,6 +172,7 @@ pub fn reproject_exact<T: Float>(
 
     Ok(ReprojectExactOutput {
         image: image_out,
+        footprint,
         weight,
     })
 }
@@ -174,15 +196,18 @@ fn reproject_exact_sequential<T: Float>(
     let height_out = rows - 1;
     let width_out = cols - 1;
     let mut image_out = Array2::<f64>::from_elem((height_out, width_out), f64::NAN);
+    let mut footprint = Array2::<f64>::zeros((height_out, width_out));
     let mut weight = Array2::<f64>::zeros((height_out, width_out));
-    for (row_index, (row_image, row_weight)) in image_out
+    for (row_index, ((row_image, row_footprint), row_weight)) in image_out
         .outer_iter_mut()
+        .zip(footprint.outer_iter_mut())
         .zip(weight.outer_iter_mut())
         .enumerate()
     {
         process_output_row(
             row_index,
             row_image,
+            row_footprint,
             row_weight,
             image_in_f64.view(),
             pixel_corners,
@@ -190,6 +215,7 @@ fn reproject_exact_sequential<T: Float>(
     }
     Ok(ReprojectExactOutput {
         image: image_out,
+        footprint,
         weight,
     })
 }
@@ -199,6 +225,7 @@ fn reproject_exact_sequential<T: Float>(
 pub(crate) fn process_output_row(
     row_index: usize,
     mut row_image: ArrayViewMut1<f64>,
+    mut row_footprint: ArrayViewMut1<f64>,
     mut row_weight: ArrayViewMut1<f64>,
     image_in_f64: ArrayView2<f64>,
     pixel_corners: ArrayView3<f64>,
@@ -227,6 +254,7 @@ pub(crate) fn process_output_row(
             || corner_bottom_left[1].is_nan();
         if any_nan_corner {
             row_image[column_index] = f64::NAN;
+            row_footprint[column_index] = 0.0;
             row_weight[column_index] = 0.0;
             continue;
         }
@@ -272,6 +300,7 @@ pub(crate) fn process_output_row(
             || y_min_f >= height_in as f64
         {
             row_image[column_index] = f64::NAN;
+            row_footprint[column_index] = 0.0;
             row_weight[column_index] = 0.0;
             continue;
         }
@@ -282,17 +311,13 @@ pub(crate) fn process_output_row(
         let row_hi = (y_max_f.ceil() as i64).min(height_in as i64);
 
         let mut numerator = 0.0_f64;
-        let mut denominator = 0.0_f64;
+        let mut denominator_valid = 0.0_f64;
+        let mut denominator_geom = 0.0_f64;
         for cell_row in row_lo..row_hi {
             for cell_column in column_lo..column_hi {
-                let pixel_value =
-                    image_in_f64[(cell_row as usize, cell_column as usize)];
-                if pixel_value.is_nan() {
-                    // NaN-as-mask: drop this input pixel from both the
-                    // numerator and the denominator. Other pixels that
-                    // overlap the output quad still contribute normally.
-                    continue;
-                }
+                // Always compute the geometric overlap first: the
+                // footprint accumulator must count all in-bounds area
+                // regardless of input data validity.
                 let clipped = clip_quad_against_unit_cell(
                     &quad,
                     (cell_column as i32, cell_row as i32),
@@ -304,22 +329,34 @@ pub(crate) fn process_output_row(
                 if overlap_area == 0.0 {
                     continue;
                 }
+                denominator_geom += overlap_area;
+                let pixel_value =
+                    image_in_f64[(cell_row as usize, cell_column as usize)];
+                if pixel_value.is_nan() {
+                    // NaN-as-mask: drop this input pixel from the
+                    // numerator and the valid denominator (weight),
+                    // but it has already been counted toward footprint.
+                    continue;
+                }
                 numerator += overlap_area * pixel_value;
-                denominator += overlap_area;
+                denominator_valid += overlap_area;
             }
         }
 
-        if denominator > 0.0 {
-            row_image[column_index] = numerator / denominator;
+        if denominator_valid > 0.0 {
+            row_image[column_index] = numerator / denominator_valid;
         } else {
             row_image[column_index] = f64::NAN;
         }
-        let weight_value = if output_pixel_area > 0.0 {
-            (denominator / output_pixel_area).clamp(0.0, 1.0)
+        if output_pixel_area > 0.0 {
+            row_footprint[column_index] =
+                (denominator_geom / output_pixel_area).clamp(0.0, 1.0);
+            row_weight[column_index] =
+                (denominator_valid / output_pixel_area).clamp(0.0, 1.0);
         } else {
-            0.0
-        };
-        row_weight[column_index] = weight_value;
+            row_footprint[column_index] = 0.0;
+            row_weight[column_index] = 0.0;
+        }
     }
 }
 
@@ -365,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn identity_reprojection_preserves_image_and_weight_f64() {
+    fn identity_reprojection_preserves_image_footprint_and_weight_f64() {
         let image: Array2<f64> = ndarray::array![
             [1.0, 2.0, 3.0],
             [4.0, 5.0, 6.0],
@@ -376,13 +413,14 @@ mod tests {
         for i in 0..3 {
             for j in 0..3 {
                 assert!(approx_eq(output.image[(i, j)], image[(i, j)], TOL));
+                assert!(approx_eq(output.footprint[(i, j)], 1.0, TOL));
                 assert!(approx_eq(output.weight[(i, j)], 1.0, TOL));
             }
         }
     }
 
     #[test]
-    fn identity_reprojection_preserves_image_and_weight_f32() {
+    fn identity_reprojection_preserves_image_footprint_and_weight_f32() {
         let image: Array2<f32> = ndarray::array![
             [1.0, 2.0, 3.0],
             [4.0, 5.0, 6.0],
@@ -393,6 +431,7 @@ mod tests {
         for i in 0..3 {
             for j in 0..3 {
                 assert!(approx_eq(output.image[(i, j)], image[(i, j)] as f64, TOL));
+                assert!(approx_eq(output.footprint[(i, j)], 1.0, TOL));
                 assert!(approx_eq(output.weight[(i, j)], 1.0, TOL));
             }
         }
@@ -414,6 +453,14 @@ mod tests {
         let output = reproject_exact(image.view(), corners.view()).unwrap();
         for i in 0..5 {
             for j in 0..5 {
+                // No NaN inputs anywhere, so footprint and weight must
+                // be identical wherever there is any coverage.
+                assert!(
+                    approx_eq(output.footprint[(i, j)], output.weight[(i, j)], TOL),
+                    "i={i} j={j} footprint {} != weight {}",
+                    output.footprint[(i, j)],
+                    output.weight[(i, j)]
+                );
                 if output.weight[(i, j)] > 0.0 {
                     assert!(
                         approx_eq(output.image[(i, j)], constant_value, TOL),
@@ -450,8 +497,11 @@ mod tests {
         assert!(approx_eq(output.image[(0, 1)], 2.5, TOL));
         assert!(approx_eq(output.image[(0, 2)], 3.5, TOL));
         // Output pixel 3 overlaps input pixel 3 (half) only; pixel 4
-        // does not exist, so weight = 0.5 and image_out = 4.0.
+        // does not exist, so footprint = weight = 0.5 and image_out
+        // = 4.0. No NaN inputs anywhere, so footprint and weight match.
         assert!(approx_eq(output.image[(0, 3)], 4.0, TOL));
+        assert!(approx_eq(output.footprint[(0, 0)], 1.0, TOL));
+        assert!(approx_eq(output.footprint[(0, 3)], 0.5, TOL));
         assert!(approx_eq(output.weight[(0, 0)], 1.0, TOL));
         assert!(approx_eq(output.weight[(0, 3)], 0.5, TOL));
     }
@@ -484,6 +534,7 @@ mod tests {
         for i in 0..3 {
             for j in 0..3 {
                 assert!(approx_eq(output.image[(i, j)], constant_value, TOL));
+                assert!(approx_eq(output.footprint[(i, j)], 1.0, TOL));
                 assert!(approx_eq(output.weight[(i, j)], 1.0, TOL));
             }
         }
@@ -505,19 +556,20 @@ mod tests {
         for i in 0..2 {
             for j in 0..2 {
                 assert!(output.image[(i, j)].is_nan());
+                assert_eq!(output.footprint[(i, j)], 0.0);
                 assert_eq!(output.weight[(i, j)], 0.0);
             }
         }
     }
 
     #[test]
-    fn nan_input_pixel_is_excluded_from_both_numerator_and_denominator() {
+    fn nan_input_separates_footprint_from_weight() {
         // 1x3 image with the middle pixel NaN. Output pixel that spans
         // the middle two pixels in equal proportion should reduce to
-        // the right-hand pixel's value with weight = 0.5 (only half of
-        // the area contributed, because the NaN half is removed from
-        // BOTH numerator and denominator -> denominator = 0.5 of the
-        // output pixel area).
+        // the non-NaN pixel's value, with weight = 0.5 (only half of
+        // the area contributed valid data). Footprint is 1.0 because
+        // the output pixel is fully covered by the input grid
+        // geometrically — NaN does not reduce footprint.
         let image: Array2<f64> = ndarray::array![[1.0, f64::NAN, 3.0]];
         // Identity 1x3 corners, then shift +0.5 in x: output pixel j
         // spans input pixels j and j+1, 50/50.
@@ -528,14 +580,24 @@ mod tests {
             }
         }
         let output = reproject_exact(image.view(), corners.view()).unwrap();
-        // Output pixel 0 sees input 0 (1.0) + input 1 (NaN). NaN
-        // drops; remaining = 1.0 over area 0.5 -> value 1.0,
-        // weight 0.5.
+        // Output pixel 0 spans input 0 (1.0) + input 1 (NaN), 50/50.
+        // image = 1.0; footprint = 1.0 (fully geometrically covered);
+        // weight = 0.5 (only the non-NaN half contributed).
         assert!(approx_eq(output.image[(0, 0)], 1.0, TOL));
+        assert!(approx_eq(output.footprint[(0, 0)], 1.0, TOL));
         assert!(approx_eq(output.weight[(0, 0)], 0.5, TOL));
-        // Output pixel 1 sees input 1 (NaN) + input 2 (3.0).
+        // Output pixel 1 spans input 1 (NaN) + input 2 (3.0). Same
+        // pattern.
         assert!(approx_eq(output.image[(0, 1)], 3.0, TOL));
+        assert!(approx_eq(output.footprint[(0, 1)], 1.0, TOL));
         assert!(approx_eq(output.weight[(0, 1)], 0.5, TOL));
+        // Output pixel 2 spans input 2 (3.0) + (off-grid pixel 3, NaN
+        // because out of bounds). image = 3.0; footprint = 0.5 (only
+        // half the output pixel is inside the input image);
+        // weight = 0.5 (the half that is inside is non-NaN).
+        assert!(approx_eq(output.image[(0, 2)], 3.0, TOL));
+        assert!(approx_eq(output.footprint[(0, 2)], 0.5, TOL));
+        assert!(approx_eq(output.weight[(0, 2)], 0.5, TOL));
     }
 
     #[test]
@@ -545,10 +607,12 @@ mod tests {
         corners[(1, 1, 0)] = f64::NAN;
         let output = reproject_exact(image.view(), corners.view()).unwrap();
         // The NaN corner is shared by output pixels (0, 0), (0, 1),
-        // (1, 0), (1, 1) — all 4. Each must be NaN/0.
+        // (1, 0), (1, 1) — all 4. Each must be NaN with both footprint
+        // and weight zeroed.
         for i in 0..2 {
             for j in 0..2 {
                 assert!(output.image[(i, j)].is_nan());
+                assert_eq!(output.footprint[(i, j)], 0.0);
                 assert_eq!(output.weight[(i, j)], 0.0);
             }
         }
@@ -607,6 +671,10 @@ mod tests {
                     // rayon schedules rows.
                     assert_eq!(p_image.to_bits(), s_image.to_bits());
                 }
+                assert_eq!(
+                    parallel.footprint[(i, j)].to_bits(),
+                    sequential.footprint[(i, j)].to_bits()
+                );
                 assert_eq!(
                     parallel.weight[(i, j)].to_bits(),
                     sequential.weight[(i, j)].to_bits()

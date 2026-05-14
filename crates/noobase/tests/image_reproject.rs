@@ -51,8 +51,12 @@ fn f32_and_f64_inputs_agree_within_f32_precision() {
             let weight_f64 = output_f64.weight[(i, j)];
             let weight_f32 = output_f32.weight[(i, j)];
 
-            // Weight only depends on the corner geometry, so f32 and
-            // f64 paths must produce *identical* weights.
+            let footprint_f64 = output_f64.footprint[(i, j)];
+            let footprint_f32 = output_f32.footprint[(i, j)];
+
+            // Footprint and weight only depend on the corner geometry,
+            // so f32 and f64 paths must produce *identical* values.
+            assert_eq!(footprint_f64, footprint_f32, "footprint mismatch at ({i}, {j})");
             assert_eq!(weight_f64, weight_f32, "weight mismatch at ({i}, {j})");
 
             if value_f64.is_nan() {
@@ -76,6 +80,7 @@ fn output_dtype_is_always_f64_for_f32_input() {
     let image: Array2<f32> = Array2::from_elem((2, 2), 1.5_f32);
     let corners = shifted_identity_corners(2, 2, 0.0, 0.0);
     let output = reproject_exact(image.view(), corners.view()).unwrap();
-    let _check_dtype: &Array2<f64> = &output.image;
+    let _check_image_dtype: &Array2<f64> = &output.image;
+    let _check_footprint_dtype: &Array2<f64> = &output.footprint;
     let _check_weight_dtype: &Array2<f64> = &output.weight;
 }
