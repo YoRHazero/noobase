@@ -11,7 +11,8 @@ keywords = ["astronomy", "spectroscopy", "photometry", "rebin", "scientific"]
 categories = ["science"]
 
 [dependencies]
-ndarray = { workspace = true }
+ndarray = { workspace = true, features = ["rayon"] }
 num-traits = { workspace = true }
+rayon = "1.12.0"
 smallvec = "1.15.1"
 thiserror = { workspace = true }

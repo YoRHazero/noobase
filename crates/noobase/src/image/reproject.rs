@@ -42,7 +42,8 @@
 //!   flux, multiply the output image by the returned weight and by the
 //!   output pixel area in input-pixel units.
 
-use ndarray::{Array2, ArrayView2, ArrayView3, ArrayViewMut1};
+use ndarray::{Array2, ArrayView2, ArrayView3, ArrayViewMut1, Axis};
+use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::float::Float;
@@ -129,6 +130,51 @@ pub fn reproject_exact<T: Float>(
     let mut image_out = Array2::<f64>::from_elem((height_out, width_out), f64::NAN);
     let mut weight = Array2::<f64>::zeros((height_out, width_out));
 
+    // Rows are independent: each output row only reads `image_in_f64`
+    // and the slice of `pixel_corners` between rows `i_out` and
+    // `i_out + 1`, and only writes its own row of `image_out` /
+    // `weight`. Drive them in parallel via rayon.
+    image_out
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .zip(weight.axis_iter_mut(Axis(0)).into_par_iter())
+        .enumerate()
+        .for_each(|(row_index, (row_image, row_weight))| {
+            process_output_row(
+                row_index,
+                row_image,
+                row_weight,
+                image_in_f64.view(),
+                pixel_corners,
+            );
+        });
+
+    Ok(ReprojectExactOutput {
+        image: image_out,
+        weight,
+    })
+}
+
+/// Sequential driver retained for tests. Used by the parallel-vs-
+/// sequential equivalence test to confirm the rayon driver does not
+/// change the result bitwise.
+#[cfg(test)]
+fn reproject_exact_sequential<T: Float>(
+    image_in: ArrayView2<T>,
+    pixel_corners: ArrayView3<f64>,
+) -> Result<ReprojectExactOutput, ReprojectError> {
+    let corner_shape = pixel_corners.shape();
+    let rows = corner_shape[0];
+    let cols = corner_shape[1];
+    let last = corner_shape[2];
+    if last != 2 || rows < 2 || cols < 2 {
+        return Err(ReprojectError::PixelCornersShape { rows, cols, last });
+    }
+    let image_in_f64: Array2<f64> = image_in.mapv(|value| value.to_f64().unwrap_or(f64::NAN));
+    let height_out = rows - 1;
+    let width_out = cols - 1;
+    let mut image_out = Array2::<f64>::from_elem((height_out, width_out), f64::NAN);
+    let mut weight = Array2::<f64>::zeros((height_out, width_out));
     for (row_index, (row_image, row_weight)) in image_out
         .outer_iter_mut()
         .zip(weight.outer_iter_mut())
@@ -142,7 +188,6 @@ pub fn reproject_exact<T: Float>(
             pixel_corners,
         );
     }
-
     Ok(ReprojectExactOutput {
         image: image_out,
         weight,
@@ -522,6 +567,52 @@ mod tests {
                 last: 3
             }
         );
+    }
+
+    #[test]
+    fn parallel_matches_sequential_bitwise_on_moderate_input() {
+        // Moderate size so rayon actually splits the work, and a
+        // sub-pixel-shifted corner field so every output pixel does
+        // real area-weighted averaging.
+        let height = 32usize;
+        let width = 40usize;
+        let mut image: Array2<f64> = Array2::zeros((height, width));
+        for i in 0..height {
+            for j in 0..width {
+                image[(i, j)] =
+                    ((i * 13 + j * 7) % 97) as f64 / 11.0 + (i as f64).sin();
+            }
+        }
+        let mut corners = Array3::<f64>::zeros((height + 1, width + 1, 2));
+        for i_node in 0..=height {
+            for j_node in 0..=width {
+                corners[(i_node, j_node, 0)] = j_node as f64 - 0.5 + 0.37;
+                corners[(i_node, j_node, 1)] = i_node as f64 - 0.5 - 0.21;
+            }
+        }
+        let parallel = reproject_exact(image.view(), corners.view()).unwrap();
+        let sequential = reproject_exact_sequential(image.view(), corners.view()).unwrap();
+        assert_eq!(parallel.image.shape(), sequential.image.shape());
+        for i in 0..height {
+            for j in 0..width {
+                let p_image = parallel.image[(i, j)];
+                let s_image = sequential.image[(i, j)];
+                if p_image.is_nan() {
+                    assert!(s_image.is_nan());
+                } else {
+                    // Bitwise equality: each output pixel's per-input
+                    // accumulation order is fixed (row-major over the
+                    // bbox) and lives entirely inside one row task, so
+                    // floats accumulate identically regardless of how
+                    // rayon schedules rows.
+                    assert_eq!(p_image.to_bits(), s_image.to_bits());
+                }
+                assert_eq!(
+                    parallel.weight[(i, j)].to_bits(),
+                    sequential.weight[(i, j)].to_bits()
+                );
+            }
+        }
     }
 
     #[test]
