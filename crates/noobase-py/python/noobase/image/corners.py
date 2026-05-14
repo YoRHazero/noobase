@@ -62,18 +62,20 @@ def make_pixel_corners(
         ndarrays giving source-image pixel coordinates.
         ``astropy.wcs.WCS.world_to_pixel_values`` matches this
         signature.
-    coarse_step : tuple of (int, int), optional
-        If given as ``(step_h, step_w)``, evaluate the WCS callables on
-        a coarse subgrid stepping every ``step_h`` rows and ``step_w``
-        columns of the target pixel grid, then bicubic-interpolate the
-        result to the full ``(H_target + 1, W_target + 1)`` corner grid.
-        Useful when the callables are expensive (notably JWST gwcs
-        pipelines that solve a numerical inverse per evaluation): a
-        2048x2048 target with ``coarse_step=(64, 64)`` reduces the WCS
-        call count from ~4M to ~1k. Both components must be positive and
-        must divide their corresponding ``target_shape`` axis exactly;
-        otherwise ``ValueError`` is raised. Default ``None`` evaluates
-        the callables on the full corner grid (no interpolation).
+    coarse_step : sequence of (int, int), optional
+        Any 2-element sequence of positive ints — tuple, list, or
+        ndarray are all accepted. If given as ``(step_h, step_w)``,
+        evaluate the WCS callables on a coarse subgrid stepping every
+        ``step_h`` rows and ``step_w`` columns of the target pixel
+        grid, then bicubic-interpolate the result to the full
+        ``(H_target + 1, W_target + 1)`` corner grid. Useful when the
+        callables are expensive (notably JWST gwcs pipelines that solve
+        a numerical inverse per evaluation): a 2048x2048 target with
+        ``coarse_step=(64, 64)`` reduces the WCS call count from ~4M
+        to ~1k. Both components must be positive and must divide their
+        corresponding ``target_shape`` axis exactly; otherwise
+        ``ValueError`` is raised. Default ``None`` evaluates the
+        callables on the full corner grid (no interpolation).
 
     Returns
     -------
@@ -106,35 +108,51 @@ def make_pixel_corners(
             source_world_to_pixel,
         )
 
-    if (
-        not isinstance(coarse_step, tuple)
-        or len(coarse_step) != 2
-        or not all(isinstance(value, int) for value in coarse_step)
-    ):
+    # Accept any 2-element sequence (tuple, list, ndarray, ...).
+    try:
+        items = tuple(coarse_step)
+    except TypeError:
         raise ValueError(
-            f"coarse_step must be a tuple of two positive ints; got {coarse_step!r}"
+            f"coarse_step must be a length-2 sequence of positive ints; "
+            f"got {coarse_step!r}"
         )
-    step_h, step_w = coarse_step
+    if len(items) != 2:
+        raise ValueError(
+            f"coarse_step must be a length-2 sequence of positive ints; "
+            f"got length {len(items)} from {coarse_step!r}"
+        )
+    try:
+        step_h = int(items[0])
+        step_w = int(items[1])
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"coarse_step components must be integer-valued; got {coarse_step!r}"
+        )
+    # Reject silent truncation (e.g. 1.5 -> 1).
+    if step_h != items[0] or step_w != items[1]:
+        raise ValueError(
+            f"coarse_step components must be exact integers; got {coarse_step!r}"
+        )
     if step_h <= 0 or step_w <= 0:
         raise ValueError(
-            f"coarse_step components must be positive; got {coarse_step}"
+            f"coarse_step components must be positive; got {coarse_step!r}"
         )
     if height_target % step_h != 0 or width_target % step_w != 0:
         raise ValueError(
-            f"coarse_step {coarse_step} must divide target_shape "
+            f"coarse_step {(step_h, step_w)} must divide target_shape "
             f"{target_shape} on each axis"
         )
 
     coarse_corners = _evaluate_coarse_corners(
         target_shape,
-        coarse_step,
+        (step_h, step_w),
         target_pixel_to_world,
         source_world_to_pixel,
     )
     return _bicubic_oversample(
         coarse_corners,
         target_corner_shape=(height_target + 1, width_target + 1),
-        step=coarse_step,
+        step=(step_h, step_w),
     )
 
 

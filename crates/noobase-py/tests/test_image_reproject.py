@@ -374,14 +374,84 @@ def test_coarse_step_non_positive_raises():
         )
 
 
-def test_coarse_step_wrong_type_raises():
-    with pytest.raises(ValueError, match="tuple of two positive ints"):
+def test_coarse_step_non_sequence_raises():
+    with pytest.raises(ValueError, match="length-2 sequence"):
         noobase.image.make_pixel_corners(
             (8, 8),
             target_pixel_to_world=_identity_pixel_to_world,
             source_world_to_pixel=_identity_world_to_pixel,
             coarse_step=4,
         )
+
+
+def test_coarse_step_wrong_length_raises():
+    with pytest.raises(ValueError, match="length-2 sequence"):
+        noobase.image.make_pixel_corners(
+            (8, 8),
+            target_pixel_to_world=_identity_pixel_to_world,
+            source_world_to_pixel=_identity_world_to_pixel,
+            coarse_step=(4, 4, 4),
+        )
+
+
+def test_coarse_step_non_integer_components_raises():
+    with pytest.raises(ValueError, match="exact integers"):
+        noobase.image.make_pixel_corners(
+            (8, 8),
+            target_pixel_to_world=_identity_pixel_to_world,
+            source_world_to_pixel=_identity_world_to_pixel,
+            coarse_step=(2.5, 4),
+        )
+
+
+def test_coarse_step_accepts_list():
+    reference = noobase.image.make_pixel_corners(
+        (16, 24),
+        target_pixel_to_world=_identity_pixel_to_world,
+        source_world_to_pixel=_identity_world_to_pixel,
+        coarse_step=(4, 6),
+    )
+    from_list = noobase.image.make_pixel_corners(
+        (16, 24),
+        target_pixel_to_world=_identity_pixel_to_world,
+        source_world_to_pixel=_identity_world_to_pixel,
+        coarse_step=[4, 6],
+    )
+    np.testing.assert_array_equal(from_list, reference)
+
+
+def test_coarse_step_accepts_ndarray():
+    reference = noobase.image.make_pixel_corners(
+        (16, 24),
+        target_pixel_to_world=_identity_pixel_to_world,
+        source_world_to_pixel=_identity_world_to_pixel,
+        coarse_step=(4, 6),
+    )
+    from_ndarray = noobase.image.make_pixel_corners(
+        (16, 24),
+        target_pixel_to_world=_identity_pixel_to_world,
+        source_world_to_pixel=_identity_world_to_pixel,
+        coarse_step=np.array([4, 6]),
+    )
+    np.testing.assert_array_equal(from_ndarray, reference)
+
+
+def test_coarse_step_accepts_integer_valued_floats():
+    # 64.0 is an exact integer; accept it (matches numpy's general
+    # convention for shape-like parameters).
+    reference = noobase.image.make_pixel_corners(
+        (16, 24),
+        target_pixel_to_world=_identity_pixel_to_world,
+        source_world_to_pixel=_identity_world_to_pixel,
+        coarse_step=(4, 6),
+    )
+    from_floats = noobase.image.make_pixel_corners(
+        (16, 24),
+        target_pixel_to_world=_identity_pixel_to_world,
+        source_world_to_pixel=_identity_world_to_pixel,
+        coarse_step=(4.0, 6.0),
+    )
+    np.testing.assert_array_equal(from_floats, reference)
 
 
 def test_coarse_step_end_to_end_with_reproject_exact():
