@@ -171,3 +171,102 @@ def test_pixel_corners_too_small_front_dims_raises():
     corners = np.zeros((1, 5, 2), dtype=np.float64)
     with pytest.raises(ValueError, match=">= 2"):
         noobase.image.reproject_exact(image_in, corners)
+
+
+# ---------------------------------------------------------------------------
+# make_pixel_corners helper
+# ---------------------------------------------------------------------------
+
+
+def _identity_pixel_to_world(x, y):
+    return (x, y)
+
+
+def _identity_world_to_pixel(x, y):
+    return (x, y)
+
+
+def test_make_pixel_corners_identity_matches_manual_construction():
+    corners = noobase.image.make_pixel_corners(
+        (3, 4),
+        output_pixel_to_world=_identity_pixel_to_world,
+        input_world_to_pixel=_identity_world_to_pixel,
+    )
+    expected = _identity_corners(3, 4)
+    assert corners.dtype == np.float64
+    assert corners.shape == (4, 5, 2)
+    np.testing.assert_allclose(corners, expected, atol=TOLERANCE)
+
+
+def test_make_pixel_corners_applies_half_pixel_offset_to_callables():
+    seen = {}
+
+    def capturing_pixel_to_world(x, y):
+        seen["x"] = x.copy()
+        seen["y"] = y.copy()
+        return (x, y)
+
+    noobase.image.make_pixel_corners(
+        (2, 2),
+        output_pixel_to_world=capturing_pixel_to_world,
+        input_world_to_pixel=_identity_world_to_pixel,
+    )
+    # Corner nodes must arrive at the user's callable already shifted by
+    # -0.5 so the caller does not have to remember the convention.
+    expected_x = np.array(
+        [
+            [-0.5, 0.5, 1.5],
+            [-0.5, 0.5, 1.5],
+            [-0.5, 0.5, 1.5],
+        ],
+        dtype=np.float64,
+    )
+    expected_y = np.array(
+        [
+            [-0.5, -0.5, -0.5],
+            [0.5, 0.5, 0.5],
+            [1.5, 1.5, 1.5],
+        ],
+        dtype=np.float64,
+    )
+    np.testing.assert_array_equal(seen["x"], expected_x)
+    np.testing.assert_array_equal(seen["y"], expected_y)
+
+
+def test_make_pixel_corners_translation_through_chain():
+    # World coords carry a constant offset; the inverse undoes it. The
+    # composed chain is the identity, so the corners must equal the
+    # identity corner field.
+    def output_pixel_to_world(x, y):
+        return (x + 5.0, y - 3.0)
+
+    def input_world_to_pixel(ra, dec):
+        return (ra - 5.0, dec + 3.0)
+
+    corners = noobase.image.make_pixel_corners(
+        (3, 3),
+        output_pixel_to_world=output_pixel_to_world,
+        input_world_to_pixel=input_world_to_pixel,
+    )
+    np.testing.assert_allclose(corners, _identity_corners(3, 3), atol=TOLERANCE)
+
+
+def test_make_pixel_corners_end_to_end_with_reproject_exact():
+    # Identity chain -> corners produce an identity reprojection.
+    image_in = np.array(
+        [
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
+            [7.0, 8.0, 9.0],
+        ],
+        dtype=np.float64,
+    )
+    corners = noobase.image.make_pixel_corners(
+        image_in.shape,
+        output_pixel_to_world=_identity_pixel_to_world,
+        input_world_to_pixel=_identity_world_to_pixel,
+    )
+    image, footprint, weight = noobase.image.reproject_exact(image_in, corners)
+    np.testing.assert_allclose(image, image_in, atol=TOLERANCE)
+    np.testing.assert_allclose(footprint, 1.0, atol=TOLERANCE)
+    np.testing.assert_allclose(weight, 1.0, atol=TOLERANCE)
