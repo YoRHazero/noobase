@@ -212,19 +212,19 @@ pub(crate) fn process_output_row(
         // (row_index, column_index). Winding (CCW or CW) is irrelevant
         // because we take the absolute area; the only requirement is
         // that consecutive indices walk around the quad.
-        let corner_tl = corner_at(pixel_corners, row_index, column_index);
-        let corner_tr = corner_at(pixel_corners, row_index, column_index + 1);
-        let corner_br = corner_at(pixel_corners, row_index + 1, column_index + 1);
-        let corner_bl = corner_at(pixel_corners, row_index + 1, column_index);
+        let corner_top_left = corner_at(pixel_corners, row_index, column_index);
+        let corner_top_right = corner_at(pixel_corners, row_index, column_index + 1);
+        let corner_bottom_right = corner_at(pixel_corners, row_index + 1, column_index + 1);
+        let corner_bottom_left = corner_at(pixel_corners, row_index + 1, column_index);
 
-        let any_nan_corner = corner_tl[0].is_nan()
-            || corner_tl[1].is_nan()
-            || corner_tr[0].is_nan()
-            || corner_tr[1].is_nan()
-            || corner_br[0].is_nan()
-            || corner_br[1].is_nan()
-            || corner_bl[0].is_nan()
-            || corner_bl[1].is_nan();
+        let any_nan_corner = corner_top_left[0].is_nan()
+            || corner_top_left[1].is_nan()
+            || corner_top_right[0].is_nan()
+            || corner_top_right[1].is_nan()
+            || corner_bottom_right[0].is_nan()
+            || corner_bottom_right[1].is_nan()
+            || corner_bottom_left[0].is_nan()
+            || corner_bottom_left[1].is_nan();
         if any_nan_corner {
             row_image[column_index] = f64::NAN;
             row_weight[column_index] = 0.0;
@@ -235,10 +235,10 @@ pub(crate) fn process_output_row(
         // unit cell [j, j+1] x [i, i+1]. Keeping this internal lets
         // callers reason in astropy's convention (integer = center).
         let quad: [Point; 4] = [
-            [corner_tl[0] + 0.5, corner_tl[1] + 0.5],
-            [corner_tr[0] + 0.5, corner_tr[1] + 0.5],
-            [corner_br[0] + 0.5, corner_br[1] + 0.5],
-            [corner_bl[0] + 0.5, corner_bl[1] + 0.5],
+            [corner_top_left[0] + 0.5, corner_top_left[1] + 0.5],
+            [corner_top_right[0] + 0.5, corner_top_right[1] + 0.5],
+            [corner_bottom_right[0] + 0.5, corner_bottom_right[1] + 0.5],
+            [corner_bottom_left[0] + 0.5, corner_bottom_left[1] + 0.5],
         ];
 
         let output_pixel_area = signed_area(&quad).abs();
