@@ -11,8 +11,8 @@ def reproject_exact(
 
 
 def make_pixel_corners(
-    output_shape: tuple[int, int],
+    target_shape: tuple[int, int],
     *,
-    output_pixel_to_world: Callable[..., Any],
-    input_world_to_pixel: Callable[..., Any],
+    target_pixel_to_world: Callable[..., Any],
+    source_world_to_pixel: Callable[..., Any],
 ) -> NDArray[np.float64]: ...

@@ -99,18 +99,18 @@ Reproject an image onto another image's pixel grid. `noobase` does not depend on
 ```python
 import noobase
 
-# image_reference + wcs_reference: the frame you want to align onto.
-# image_other + wcs_other: the image to reproject.
+# image_target + wcs_target: the frame you want to align onto.
+# image_source + wcs_source: the image to reproject.
 
 pixel_corners = noobase.image.make_pixel_corners(
-    image_reference.shape,
-    output_pixel_to_world=wcs_reference.pixel_to_world_values,
-    input_world_to_pixel=wcs_other.world_to_pixel_values,
+    image_target.shape,
+    target_pixel_to_world=wcs_target.pixel_to_world_values,
+    source_world_to_pixel=wcs_source.world_to_pixel_values,
 )
 
-image, footprint, weight = noobase.image.reproject_exact(image_other, pixel_corners)
-# `image` matches `image_reference.shape`; surface brightness is conserved.
-# `footprint` is the pure geometric overlap fraction with the input image bounds.
+image, footprint, weight = noobase.image.reproject_exact(image_source, pixel_corners)
+# `image` matches `image_target.shape`; surface brightness is conserved.
+# `footprint` is the pure geometric overlap fraction with the source image bounds.
 # `weight` is the same restricted to non-NaN inputs; invariant: weight <= footprint.
 # Use `weight / footprint` to recover the non-NaN fraction inside the covered region.
 ```

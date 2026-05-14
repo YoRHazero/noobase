@@ -13,70 +13,82 @@ from numpy.typing import NDArray
 
 
 def make_pixel_corners(
-    output_shape: tuple[int, int],
+    target_shape: tuple[int, int],
     *,
-    output_pixel_to_world: Callable,
-    input_world_to_pixel: Callable,
+    target_pixel_to_world: Callable,
+    source_world_to_pixel: Callable,
 ) -> NDArray[np.float64]:
     """Build the ``pixel_corners`` array consumed by ``reproject_exact``.
 
-    Maps every node of the output pixel grid through
-    ``output_pixel_to_world`` and then ``input_world_to_pixel`` to obtain
-    the corresponding location in the input image's pixel coordinate
-    system. The half-pixel corner offset required by the astropy / gwcs
-    convention (integer ``(x, y)`` is the *center* of a pixel) is applied
-    internally so the caller does not have to remember it.
+    Maps every node of the *target* pixel grid (the frame you are
+    aligning onto) through ``target_pixel_to_world`` and then
+    ``source_world_to_pixel`` to obtain the corresponding location in
+    the *source* image's pixel coordinate system (the image you are
+    reprojecting). The half-pixel corner offset required by the astropy
+    / gwcs convention (integer ``(x, y)`` is the *center* of a pixel)
+    is applied internally so the caller does not have to remember it.
+
+    The terminology follows image registration: ``source`` is the image
+    being reprojected (the data you have), ``target`` is the frame you
+    are aligning onto (the goal). In a later call to
+    ``reproject_exact``, ``source`` will be passed as ``image_in`` and
+    the corner array produced here projects each target pixel into the
+    source's pixel coordinates.
 
     Parameters
     ----------
-    output_shape : tuple of (int, int)
-        ``(H_out, W_out)`` — the shape of the reprojected image you want.
-        Usually this is the shape of the reference image you are aligning
-        onto.
-    output_pixel_to_world : callable
-        Forward transform on the *output* WCS. Signature::
+    target_shape : tuple of (int, int)
+        ``(H_target, W_target)`` — the shape of the reprojected image
+        you want. Usually this is the shape of the reference image you
+        are aligning onto.
+    target_pixel_to_world : callable
+        Forward transform on the *target* WCS. Signature::
 
-            output_pixel_to_world(x, y) -> tuple of ndarray
+            target_pixel_to_world(x, y) -> tuple of ndarray
 
-        where ``x`` and ``y`` are 2-D ndarrays of output pixel
+        where ``x`` and ``y`` are 2-D ndarrays of target pixel
         coordinates (integer = pixel center) and the return is a tuple
         of world-coordinate arrays (for example ``(ra, dec)``).
         ``astropy.wcs.WCS.pixel_to_world_values`` and the equivalent
         gwcs API match this signature.
-    input_world_to_pixel : callable
-        Inverse transform on the *input* WCS. Signature::
+    source_world_to_pixel : callable
+        Inverse transform on the *source* WCS. Signature::
 
-            input_world_to_pixel(*world_arrays) -> (x_in, y_in)
+            source_world_to_pixel(*world_arrays) -> (x_source, y_source)
 
         where the inputs are the world arrays produced by
-        ``output_pixel_to_world`` and the return is the pair of 2-D
-        ndarrays giving input-image pixel coordinates.
+        ``target_pixel_to_world`` and the return is the pair of 2-D
+        ndarrays giving source-image pixel coordinates.
         ``astropy.wcs.WCS.world_to_pixel_values`` matches this
         signature.
 
     Returns
     -------
     ndarray
-        ``pixel_corners`` of shape ``(H_out + 1, W_out + 1, 2)`` and
-        dtype ``float64``. The last axis is ``(x_in, y_in)``. Pass it
-        directly to ``reproject_exact``.
+        ``pixel_corners`` of shape ``(H_target + 1, W_target + 1, 2)``
+        and dtype ``float64``. The last axis is
+        ``(x_source, y_source)``. Pass it directly to
+        ``reproject_exact``.
 
     Notes
     -----
-    The callables are evaluated once on the full ``(H_out + 1, W_out + 1)``
-    corner grid. For expensive transforms (notably JWST gwcs pipelines
-    that solve a numerical inverse), this means one large vectorised
-    call rather than per-pixel calls.
+    The callables are evaluated once on the full
+    ``(H_target + 1, W_target + 1)`` corner grid. For expensive
+    transforms (notably JWST gwcs pipelines that solve a numerical
+    inverse), this means one large vectorised call rather than
+    per-pixel calls.
     """
-    height_out, width_out = output_shape
-    y_node, x_node = np.indices((height_out + 1, width_out + 1))
-    x_pixel = x_node.astype(np.float64) - 0.5
-    y_pixel = y_node.astype(np.float64) - 0.5
-    world = output_pixel_to_world(x_pixel, y_pixel)
+    height_target, width_target = target_shape
+    y_node, x_node = np.indices((height_target + 1, width_target + 1))
+    x_target = x_node.astype(np.float64) - 0.5
+    y_target = y_node.astype(np.float64) - 0.5
+    world = target_pixel_to_world(x_target, y_target)
     if not isinstance(world, tuple):
         world = (world,)
-    x_in, y_in = input_world_to_pixel(*world)
-    pixel_corners = np.empty((height_out + 1, width_out + 1, 2), dtype=np.float64)
-    pixel_corners[..., 0] = x_in
-    pixel_corners[..., 1] = y_in
+    x_source, y_source = source_world_to_pixel(*world)
+    pixel_corners = np.empty(
+        (height_target + 1, width_target + 1, 2), dtype=np.float64
+    )
+    pixel_corners[..., 0] = x_source
+    pixel_corners[..., 1] = y_source
     return pixel_corners
