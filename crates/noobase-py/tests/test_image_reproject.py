@@ -270,3 +270,129 @@ def test_make_pixel_corners_end_to_end_with_reproject_exact():
     np.testing.assert_allclose(image, image_in, atol=TOLERANCE)
     np.testing.assert_allclose(footprint, 1.0, atol=TOLERANCE)
     np.testing.assert_allclose(weight, 1.0, atol=TOLERANCE)
+
+
+# ---------------------------------------------------------------------------
+# make_pixel_corners with coarse_step
+# ---------------------------------------------------------------------------
+
+
+def test_coarse_step_identity_matches_dense_path():
+    # Identity is linear, and Catmull-Rom with linear-extrapolation
+    # boundaries is exact on linear corner fields. The dense and coarse
+    # paths must therefore agree up to the rounding noise of the bicubic
+    # accumulation (a handful of f64 ulps, well under 1e-12).
+    dense = noobase.image.make_pixel_corners(
+        (16, 24),
+        target_pixel_to_world=_identity_pixel_to_world,
+        source_world_to_pixel=_identity_world_to_pixel,
+    )
+    coarse = noobase.image.make_pixel_corners(
+        (16, 24),
+        target_pixel_to_world=_identity_pixel_to_world,
+        source_world_to_pixel=_identity_world_to_pixel,
+        coarse_step=(4, 6),
+    )
+    np.testing.assert_allclose(coarse, dense, atol=1e-12)
+
+
+def test_coarse_step_affine_chain_matches_dense_path():
+    # Affine chain (rotation + translation in world space) is also
+    # exactly representable by a linear corner field, so coarse and
+    # dense paths must agree to within numerical noise.
+    def target_pixel_to_world(x, y):
+        # Rotate by 30 degrees and translate.
+        cos_theta = np.cos(np.deg2rad(30.0))
+        sin_theta = np.sin(np.deg2rad(30.0))
+        return (cos_theta * x - sin_theta * y + 17.0, sin_theta * x + cos_theta * y - 5.0)
+
+    def source_world_to_pixel(ra, dec):
+        cos_theta = np.cos(np.deg2rad(30.0))
+        sin_theta = np.sin(np.deg2rad(30.0))
+        x_world = ra - 17.0
+        y_world = dec + 5.0
+        return (cos_theta * x_world + sin_theta * y_world, -sin_theta * x_world + cos_theta * y_world)
+
+    dense = noobase.image.make_pixel_corners(
+        (32, 32),
+        target_pixel_to_world=target_pixel_to_world,
+        source_world_to_pixel=source_world_to_pixel,
+    )
+    coarse = noobase.image.make_pixel_corners(
+        (32, 32),
+        target_pixel_to_world=target_pixel_to_world,
+        source_world_to_pixel=source_world_to_pixel,
+        coarse_step=(8, 8),
+    )
+    np.testing.assert_allclose(coarse, dense, atol=1e-12)
+
+
+def test_coarse_step_invokes_callables_only_on_coarse_grid():
+    call_count = {"target": 0, "source": 0}
+    captured_shape = {}
+
+    def target_pixel_to_world(x, y):
+        call_count["target"] += 1
+        captured_shape["target"] = x.shape
+        return (x, y)
+
+    def source_world_to_pixel(ra, dec):
+        call_count["source"] += 1
+        captured_shape["source"] = ra.shape
+        return (ra, dec)
+
+    noobase.image.make_pixel_corners(
+        (64, 64),
+        target_pixel_to_world=target_pixel_to_world,
+        source_world_to_pixel=source_world_to_pixel,
+        coarse_step=(16, 32),
+    )
+    # Each callable evaluated exactly once.
+    assert call_count == {"target": 1, "source": 1}
+    # Coarse corner grid has shape (H/step_h + 1, W/step_w + 1).
+    assert captured_shape["target"] == (5, 3)
+    assert captured_shape["source"] == (5, 3)
+
+
+def test_coarse_step_non_divisible_raises():
+    with pytest.raises(ValueError, match="must divide target_shape"):
+        noobase.image.make_pixel_corners(
+            (7, 8),
+            target_pixel_to_world=_identity_pixel_to_world,
+            source_world_to_pixel=_identity_world_to_pixel,
+            coarse_step=(3, 2),
+        )
+
+
+def test_coarse_step_non_positive_raises():
+    with pytest.raises(ValueError, match="must be positive"):
+        noobase.image.make_pixel_corners(
+            (8, 8),
+            target_pixel_to_world=_identity_pixel_to_world,
+            source_world_to_pixel=_identity_world_to_pixel,
+            coarse_step=(0, 4),
+        )
+
+
+def test_coarse_step_wrong_type_raises():
+    with pytest.raises(ValueError, match="tuple of two positive ints"):
+        noobase.image.make_pixel_corners(
+            (8, 8),
+            target_pixel_to_world=_identity_pixel_to_world,
+            source_world_to_pixel=_identity_world_to_pixel,
+            coarse_step=4,
+        )
+
+
+def test_coarse_step_end_to_end_with_reproject_exact():
+    image_in = np.arange(64, dtype=np.float64).reshape((8, 8))
+    corners = noobase.image.make_pixel_corners(
+        image_in.shape,
+        target_pixel_to_world=_identity_pixel_to_world,
+        source_world_to_pixel=_identity_world_to_pixel,
+        coarse_step=(2, 4),
+    )
+    image, footprint, weight = noobase.image.reproject_exact(image_in, corners)
+    np.testing.assert_allclose(image, image_in, atol=TOLERANCE)
+    np.testing.assert_allclose(footprint, 1.0, atol=TOLERANCE)
+    np.testing.assert_allclose(weight, 1.0, atol=TOLERANCE)
