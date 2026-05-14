@@ -14,6 +14,7 @@ Foundational pure-function utilities for astronomy analysis. Rust core with Pyth
 - `Spectrum::to_f_nu` / `to_f_lambda` — flux density convention conversion
 - `photometry::synthetic` + `SyntheticOperator` — synthetic photometry through transmission curves (e.g. JWST NIRCam filters)
 - `image::reproject_exact` — surface-brightness-conserving image reprojection via planar polygon clipping (rayon-parallel; WCS handling stays in the caller's astropy / gwcs)
+- `image.make_pixel_corners` — Python-side helper that turns a pair of `pixel_to_world_values` / `world_to_pixel_values` callables (e.g. `astropy.wcs` or `gwcs`) into the corner array consumed by `reproject_exact`
 
 ## Install
 
@@ -93,25 +94,19 @@ for theta in samples:
     flux, error = operator.apply(model_flux, spectrum_error=model_error)
 ```
 
-Reproject an image onto another image's pixel grid. `noobase` does not depend on astropy — the caller is expected to pre-compute the corner field using whichever WCS toolkit they prefer (`astropy.wcs`, `gwcs`, …) and pass it in as a plain ndarray. The reprojection itself is then a pure planar polygon clip in input-pixel space, parallelised over output rows:
+Reproject an image onto another image's pixel grid. `noobase` does not depend on astropy or gwcs — `make_pixel_corners` takes the WCSs' `pixel_to_world_values` / `world_to_pixel_values` methods as plain callables and handles the half-pixel corner offset internally. The reprojection itself is then a pure planar polygon clip in input-pixel space, parallelised over output rows:
 
 ```python
-import numpy as np
-from astropy.wcs import WCS
 import noobase
 
 # image_reference + wcs_reference: the frame you want to align onto.
 # image_other + wcs_other: the image to reproject.
 
-height_out, width_out = image_reference.shape
-y_node, x_node = np.indices((height_out + 1, width_out + 1))
-x_node = x_node - 0.5  # astropy convention: integer == pixel center, corners at half-integer
-y_node = y_node - 0.5
-
-# Map output pixel corners through (WCS_reference -> sky -> WCS_other).
-sky = wcs_reference.pixel_to_world_values(x_node, y_node)
-x_in, y_in = wcs_other.world_to_pixel_values(*sky)
-pixel_corners = np.stack([x_in, y_in], axis=-1)  # (height_out + 1, width_out + 1, 2)
+pixel_corners = noobase.image.make_pixel_corners(
+    image_reference.shape,
+    output_pixel_to_world=wcs_reference.pixel_to_world_values,
+    input_world_to_pixel=wcs_other.world_to_pixel_values,
+)
 
 image, footprint, weight = noobase.image.reproject_exact(image_other, pixel_corners)
 # `image` matches `image_reference.shape`; surface brightness is conserved.
@@ -119,6 +114,8 @@ image, footprint, weight = noobase.image.reproject_exact(image_other, pixel_corn
 # `weight` is the same restricted to non-NaN inputs; invariant: weight <= footprint.
 # Use `weight / footprint` to recover the non-NaN fraction inside the covered region.
 ```
+
+`make_pixel_corners` works with anything that exposes the two methods, including `astropy.wcs.WCS` and `gwcs`. The callables receive 2-D ndarrays of corner-node pixel coordinates (already shifted by -0.5) and must return world / pixel ndarrays in the same shape — exactly the contract that both libraries already implement.
 
 ## Workspace layout
 
