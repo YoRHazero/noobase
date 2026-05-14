@@ -27,6 +27,7 @@ def test_all_bindings_have_docstrings():
         noobase.photometry.SyntheticOperator,
         noobase.photometry.SyntheticOperator.__init__,
         noobase.photometry.SyntheticOperator.apply,
+        noobase.image.reproject_exact,
     ]
     for target in targets:
         doc = target.__doc__

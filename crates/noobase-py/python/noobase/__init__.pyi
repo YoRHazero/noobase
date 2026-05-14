@@ -3,6 +3,7 @@ from typing import Any, Literal, Optional, Union, overload
 import numpy as np
 from numpy.typing import NDArray
 
+from . import image as image
 from . import overlap as overlap
 from . import photometry as photometry
 
