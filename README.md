@@ -18,19 +18,17 @@ Foundational pure-function utilities for astronomy analysis. Rust core with Pyth
 
 ## Install
 
-After `v0.0.1` publishes, the canonical install is `pip install noobase` for Python and `cargo add noobase` for Rust. In the meantime, install from this repo:
-
-Python (via git):
+Python (via PyPI):
 
 ```bash
-pip install git+https://github.com/YoRHazero/noobase.git@v0.0.1
+uv add noobase
 ```
 
-Rust:
+Rust: the crate is not yet on crates.io. Pull it from git:
 
 ```toml
 [dependencies]
-noobase = { git = "https://github.com/YoRHazero/noobase.git", tag = "v0.0.1" }
+noobase = { git = "https://github.com/YoRHazero/noobase.git", tag = "v0.0.2" }
 ```
 
 ## Quick start (Python)

@@ -18,6 +18,7 @@ noobase = "0.0.1"
 - `bins::overlap` — overlap-weighted rebin primitives
 - `spectroscopy::Spectrum` — spectrum container with optional error / mask
 - `photometry::{synthetic, SyntheticOperator}` — synthetic photometry
+- `image::reproject_exact` — surface-brightness-conserving image reprojection via planar polygon clipping (rayon-parallel)
 
 ## Status
 

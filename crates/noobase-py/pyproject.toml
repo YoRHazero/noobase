@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "noobase"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Foundational pure-function utilities for astronomy analysis"
 readme = "README.md"
 requires-python = ">=3.12"

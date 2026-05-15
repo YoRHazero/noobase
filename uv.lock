@@ -49,7 +49,6 @@ wheels = [
 
 [[package]]
 name = "noobase"
-version = "0.0.1"
 source = { editable = "crates/noobase-py" }
 dependencies = [
     { name = "numpy" },

@@ -1,7 +1,7 @@
 [project]
 name = "noobase-workspace"
 version = "0.0.0"
-description = "Dev shell for the noobase Cargo + uv workspace (not published)"
+description = "Dev shell for the noobase Cargo + uv workspace (not published; version is a PEP 621 placeholder)"
 requires-python = ">=3.12"
 dependencies = ["noobase"]
 

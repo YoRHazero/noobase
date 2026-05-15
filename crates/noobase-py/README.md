@@ -45,6 +45,8 @@ band_flux, band_error, coverage = spectrum.synthetic_photometry(
 - `Grid` — 1-D monotonic axis (linear / log, centers / edges)
 - `Spectrum` — wavelength + flux + optional error + optional mask, with rebinning and flux density convention conversion
 - `photometry.SyntheticOperator` — cached synthetic photometry suited for MCMC hot loops
+- `image.reproject_exact` — surface-brightness-conserving image reprojection via planar polygon clipping (rayon-parallel; WCS handling stays in the caller's astropy / gwcs)
+- `image.make_pixel_corners` — turn a pair of `pixel_to_world_values` / `world_to_pixel_values` callables (astropy.wcs or gwcs) into the corner array consumed by `reproject_exact`, with optional `coarse_step` for expensive WCS chains
 
 See the full [project README](https://github.com/YoRHazero/noobase#readme) on GitHub for the complete feature list, the workspace layout, and the development workflow.
 
