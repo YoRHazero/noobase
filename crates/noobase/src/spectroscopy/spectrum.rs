@@ -15,8 +15,9 @@ pub enum SpectrumError {
 }
 
 /// A 1-D spectrum: a wavelength grid plus per-bin flux, optional 1-sigma error,
-/// and optional validity mask. The mask convention is `true = valid`, which is
-/// the inverse of astropy's masked-array convention.
+/// and optional mask. The mask convention is `true = invalid` (a `true` entry
+/// marks the bin as masked / excluded), matching astropy's masked-array
+/// convention.
 #[derive(Debug, Clone)]
 pub struct Spectrum<T: Float> {
     wavelength: Grid<T>,
@@ -102,9 +103,9 @@ impl<T: Float> Spectrum<T> {
     /// future `Spectrum` may carry a full covariance representation; for now
     /// this is the caller's responsibility.
     ///
-    /// The mask convention is `true = valid`. A target bin is marked valid iff
-    /// every source bin with non-zero overlap into it is valid; otherwise the
-    /// target bin is marked invalid.
+    /// The mask convention is `true = invalid`. A target bin is marked invalid
+    /// iff any source bin with non-zero overlap into it is invalid; otherwise
+    /// the target bin is marked valid.
     ///
     /// The output wavelength reuses `target.kind()` unchanged.
     pub fn rebin(&self, target: &Grid<T>) -> Spectrum<T> {
@@ -117,13 +118,16 @@ impl<T: Float> Spectrum<T> {
             output_variance.mapv(|value| value.sqrt())
         });
         let output_mask = self.mask.as_ref().map(|source_mask| {
-            let mut mask = Array1::<bool>::from_elem(target_bin_count, true);
+            // `true = invalid`. Fold is a logical OR over "invalid": a target
+            // bin is invalid iff any source bin overlapping it is invalid. The
+            // identity element is therefore `false` (nothing masked).
+            let mut mask = Array1::<bool>::from_elem(target_bin_count, false);
             overlap::for_each(
                 &self.wavelength,
                 target,
                 |target_index, source_index, _overlap_width| {
-                    if !source_mask[source_index] {
-                        mask[target_index] = false;
+                    if source_mask[source_index] {
+                        mask[target_index] = true;
                     }
                 },
             );
@@ -449,18 +453,20 @@ mod tests {
 
     #[test]
     fn rebin_mask_propagation_two_to_one() {
-        // Source mask [true, false, true, true] over width-1 bins;
-        // target width-2 bins -> [false, true].
+        // `true = invalid`. Source mask [true, false, false, false] over
+        // width-1 bins; target width-2 bins. Target bin 0 (sources 0,1) has
+        // an invalid source -> invalid (true). Target bin 1 (sources 2,3) has
+        // no invalid source -> valid (false). Expect [true, false].
         let source_wavelength = edges_grid_f64(&[0.0, 1.0, 2.0, 3.0, 4.0]);
         let target_wavelength = edges_grid_f64(&[0.0, 2.0, 4.0]);
         let flux = array![1.0_f64, 1.0, 1.0, 1.0];
-        let mask = array![true, false, true, true];
+        let mask = array![true, false, false, false];
         let spectrum = Spectrum::new(source_wavelength, flux, None, Some(mask)).unwrap();
         let output = spectrum.rebin(&target_wavelength);
         let mask_view = output.mask().unwrap();
         assert_eq!(mask_view.len(), 2);
-        assert!(!mask_view[0]);
-        assert!(mask_view[1]);
+        assert!(mask_view[0]);
+        assert!(!mask_view[1]);
     }
 
     #[test]
@@ -471,7 +477,10 @@ mod tests {
         let variance_value = 0.5_f64;
         let sigma = variance_value.sqrt();
         let error = Array1::<f64>::from_elem(4, sigma);
-        let mask = array![true, true, true, false];
+        // `true = invalid`. Target bin 0 (sources 0,1) has no invalid source
+        // -> valid (false). Target bin 1 (sources 2,3) has an invalid source
+        // -> invalid (true).
+        let mask = array![false, false, false, true];
         let spectrum = Spectrum::new(source_wavelength, flux, Some(error), Some(mask)).unwrap();
         let output = spectrum.rebin(&target_wavelength);
         assert_eq!(output.n_bins(), 2);
@@ -483,8 +492,8 @@ mod tests {
         assert!(approx_eq(error_view[0], expected_sigma, TOL));
         assert!(approx_eq(error_view[1], expected_sigma, TOL));
         let mask_view = output.mask().unwrap();
-        assert!(mask_view[0]);
-        assert!(!mask_view[1]);
+        assert!(!mask_view[0]);
+        assert!(mask_view[1]);
     }
 
     #[test]
@@ -515,13 +524,15 @@ mod tests {
         let source_wavelength = edges_grid_f64(&[0.0, 1.0, 2.0, 3.0, 4.0]);
         let target_wavelength = edges_grid_f64(&[0.0, 2.0, 4.0]);
         let flux = array![1.0_f64, 1.0, 1.0, 1.0];
-        let mask = array![false, true, true, true];
+        // `true = invalid`. Target bin 0 (sources 0,1) has an invalid source
+        // -> invalid (true). Target bin 1 (sources 2,3) has none -> valid.
+        let mask = array![true, false, false, false];
         let spectrum = Spectrum::new(source_wavelength, flux, None, Some(mask)).unwrap();
         let output = spectrum.rebin(&target_wavelength);
         assert!(output.error().is_none());
         let mask_view = output.mask().unwrap();
-        assert!(!mask_view[0]);
-        assert!(mask_view[1]);
+        assert!(mask_view[0]);
+        assert!(!mask_view[1]);
     }
 
     #[test]

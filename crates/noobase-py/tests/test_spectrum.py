@@ -207,17 +207,19 @@ def test_rebin_identity_roundtrip(dtype):
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_rebin_mask_propagation_two_to_one(dtype):
+    # True = invalid. Target bin 0 (sources 0,1) has an invalid source ->
+    # invalid (True). Target bin 1 (sources 2,3) has none -> valid (False).
     source_wavelength = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
     target = _edges_grid([0.0, 2.0, 4.0], dtype)
     flux = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
-    mask = np.array([True, False, True, True], dtype=np.bool_)
+    mask = np.array([True, False, False, False], dtype=np.bool_)
     spectrum = noobase.Spectrum(
         wavelength=source_wavelength,
         flux=flux,
         mask=mask,
     )
     rebinned = spectrum.rebin(target)
-    np.testing.assert_array_equal(rebinned.mask, np.array([False, True]))
+    np.testing.assert_array_equal(rebinned.mask, np.array([True, False]))
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])

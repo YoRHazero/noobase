@@ -19,10 +19,11 @@ pub(crate) enum SpectrumInner {
 }
 
 /// A 1-D spectrum: a wavelength Grid plus per-bin flux, optional 1-sigma
-/// error, and optional validity mask.
+/// error, and optional mask.
 ///
-/// The mask convention is ``True = valid`` (the inverse of astropy's
-/// masked-array convention). All per-bin arrays share the wavelength Grid's
+/// The mask convention is ``True = invalid`` (a ``True`` entry marks the bin
+/// as masked / excluded), matching astropy's masked-array convention. All
+/// per-bin arrays share the wavelength Grid's
 /// dtype (``float32`` or ``float64``); ``flux`` determines the channel and
 /// every other input must match it.
 ///
@@ -63,8 +64,9 @@ impl PySpectrum {
     ///     1-sigma uncertainty per bin. Same length and dtype as ``flux``.
     ///     Default is ``None``.
     /// mask : ndarray of bool, optional
-    ///     Per-bin validity flag (``True = valid``, inverse of astropy's
-    ///     convention). Same length as ``flux``. Default is ``None``.
+    ///     Per-bin mask flag (``True = invalid``: a ``True`` entry marks the
+    ///     bin as masked / excluded, matching astropy's convention). Same
+    ///     length as ``flux``. Default is ``None``.
     /// spacing : {"linear", "log"}, optional
     ///     Spacing convention for the wavelength Grid when ``wavelength`` is
     ///     an ndarray. Must be omitted when ``wavelength`` is a Grid.
@@ -203,14 +205,15 @@ impl PySpectrum {
         }
     }
 
-    /// The per-bin validity mask, if present.
+    /// The per-bin mask, if present.
     ///
     /// Returns
     /// -------
     /// ndarray of bool or None
-    ///     A new copy of the per-bin validity flags (``True = valid``,
-    ///     inverse of astropy's masked-array convention), or ``None`` if no
-    ///     mask was supplied at construction.
+    ///     A new copy of the per-bin mask flags (``True = invalid``: a
+    ///     ``True`` entry marks the bin as masked / excluded, matching
+    ///     astropy's masked-array convention), or ``None`` if no mask was
+    ///     supplied at construction.
     #[getter]
     fn mask<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyAny>> {
         let mask_view = match &self.inner {
@@ -258,9 +261,9 @@ impl PySpectrum {
     /// overlap). Error, if present, is propagated by squaring to variance,
     /// applying the same overlap operator assuming independent source bins,
     /// and taking the square root; the result is the marginal 1-sigma per
-    /// target bin. Mask, if present, is propagated as logical AND: a target
-    /// bin is valid iff every source bin with non-zero overlap into it is
-    /// valid.
+    /// target bin. Mask, if present, is propagated as logical OR (``True =
+    /// invalid``): a target bin is invalid iff any source bin with non-zero
+    /// overlap into it is invalid.
     ///
     /// Parameters
     /// ----------
