@@ -4,9 +4,10 @@
 //! PSF -> predicted detector stamps); Phase 3 adds its exact adjoint
 //! [`accumulate`] (detector-grid residuals back-projected onto the model
 //! grid); Phase 4 adds [`robust_combine`] (cross-stamp robust combination
-//! of an aligned native-resolution stack, for the extended-PSF wings).
-//! Later phases add the surrounding super-resolution solver under this
-//! module.
+//! of an aligned native-resolution stack, for the extended-PSF wings);
+//! Phase 5 adds [`solve_flux_background`] / [`refine_nuisance`] (per-star
+//! flux/background/centroid refinement against the current model). Later
+//! phases add the surrounding super-resolution solver under this module.
 //!
 //! The separable bicubic Catmull-Rom interpolation weights live in the
 //! psf-internal [`kernel`] module so that the forward operator and its
@@ -15,9 +16,14 @@
 
 mod kernel;
 pub mod accumulate;
+pub mod nuisance;
 pub mod render;
 pub mod robust;
 
 pub use accumulate::{AccumulateError, accumulate};
+pub use nuisance::{
+    FluxBackground, NuisanceError, NuisanceRefined, refine_nuisance,
+    solve_flux_background,
+};
 pub use render::{RenderError, render};
 pub use robust::{CombineMethod, RobustCombined, RobustError, robust_combine};

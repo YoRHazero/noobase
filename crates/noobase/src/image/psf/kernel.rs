@@ -42,6 +42,38 @@ pub(super) fn catmull_rom_weights(frac: f64) -> [f64; 4] {
     ]
 }
 
+/// Derivatives of the four Keys cubic-convolution (Catmull-Rom,
+/// `a = -1/2`) tap weights with respect to the fractional position
+/// `frac`. The returned array is ordered `[w'(-1), w'(0), w'(+1),
+/// w'(+2)]`, tap-for-tap aligned with [`catmull_rom_weights`].
+///
+/// These are the exact term-by-term derivatives of the polynomials in
+/// [`catmull_rom_weights`]. Differentiating the partition-of-unity
+/// identity `sum w = 1` gives `sum w' = 0`, so the four returned values
+/// always sum to zero. They are the structural source of the analytic
+/// `dS/ddelta` Jacobian used by [`super::nuisance`]: with the render
+/// sampling coordinate `k = K_c + os * ((i - c_det) - delta)` we have
+/// `dk/ddelta = -os` and `dfrac/dk = 1`, so the centroid Jacobian is
+/// these weight derivatives scaled by `-os` (pinned against a finite
+/// difference of `render` in the nuisance tests). Sharing this single
+/// derivative source with the forward kernel is the same structural
+/// guarantee that keeps `accumulate` an exact transpose of `render`.
+#[inline]
+pub(super) fn catmull_rom_weight_derivatives(frac: f64) -> [f64; 4] {
+    // d/dt of the basis written out in `catmull_rom_weights`:
+    //   w(-1)' = -1.5 t^2 + 2.0 t - 0.5
+    //   w( 0)' =  4.5 t^2 - 5.0 t
+    //   w(+1)' = -4.5 t^2 + 4.0 t + 0.5
+    //   w(+2)' =  1.5 t^2 - 1.0 t
+    let t = frac;
+    [
+        (-1.5 * t + 2.0) * t - 0.5,
+        (4.5 * t - 5.0) * t,
+        (-4.5 * t + 4.0) * t + 0.5,
+        (1.5 * t - 1.0) * t,
+    ]
+}
+
 /// Separable bicubic Catmull-Rom point sample of `epsf` at the continuous
 /// model coordinate `(k_u, k_v)`. Taps that fall outside the model grid
 /// are zero (zero padding).
@@ -79,4 +111,43 @@ pub(super) fn catmull_rom_sample(epsf: &ArrayView2<f64>, k_u: f64, k_v: f64) -> 
         }
     }
     value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{catmull_rom_weight_derivatives, catmull_rom_weights};
+
+    #[test]
+    fn weight_derivatives_match_central_difference() {
+        // Pin the analytic 4-tap weight derivatives against a central
+        // finite difference of `catmull_rom_weights`. A sign or
+        // coefficient slip in the polynomial derivative (which would
+        // flip the GN-delta step) is gross relative to this bound.
+        let step = 1e-6;
+        for &frac in &[0.05, 0.2, 0.37, 0.5, 0.63, 0.8, 0.95] {
+            let analytic = catmull_rom_weight_derivatives(frac);
+            let forward = catmull_rom_weights(frac + step);
+            let backward = catmull_rom_weights(frac - step);
+            for tap in 0..4 {
+                let finite_difference = (forward[tap] - backward[tap]) / (2.0 * step);
+                assert!(
+                    (analytic[tap] - finite_difference).abs() < 1e-6,
+                    "tap {tap} at frac {frac}: analytic {} vs finite difference {}",
+                    analytic[tap],
+                    finite_difference
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn weight_derivatives_sum_to_zero() {
+        // Differentiating the partition-of-unity identity (sum w = 1)
+        // gives sum w' = 0 for every fractional position.
+        for &frac in &[0.0, 0.1, 0.25, 0.5, 0.75, 0.999] {
+            let derivatives = catmull_rom_weight_derivatives(frac);
+            let sum: f64 = derivatives.iter().sum();
+            assert!(sum.abs() < 1e-12, "sum {sum} at frac {frac}");
+        }
+    }
 }
