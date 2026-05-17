@@ -6,8 +6,10 @@
 //! grid); Phase 4 adds [`robust_combine`] (cross-stamp robust combination
 //! of an aligned native-resolution stack, for the extended-PSF wings);
 //! Phase 5 adds [`solve_flux_background`] / [`refine_nuisance`] (per-star
-//! flux/background/centroid refinement against the current model). Later
-//! phases add the surrounding super-resolution solver under this module.
+//! flux/background/centroid refinement against the current model);
+//! Phase 6 adds [`build_epsf`] (the core super-resolution iteration
+//! driver that assembles the operator stack into a projected-Landweber
+//! solver). Later phases add the extended-PSF stitching on top.
 //!
 //! The separable bicubic Catmull-Rom interpolation weights live in the
 //! psf-internal [`kernel`] module so that the forward operator and its
@@ -16,11 +18,15 @@
 
 mod kernel;
 pub mod accumulate;
+pub mod build_epsf;
 pub mod nuisance;
 pub mod render;
 pub mod robust;
 
 pub use accumulate::{AccumulateError, accumulate};
+pub use build_epsf::{
+    BuildEpsf, BuildEpsfError, BuildEpsfParams, ResidualReweight, build_epsf,
+};
 pub use nuisance::{
     FluxBackground, NuisanceError, NuisanceRefined, refine_nuisance,
     solve_flux_background,
