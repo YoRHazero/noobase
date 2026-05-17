@@ -9,7 +9,10 @@
 //! flux/background/centroid refinement against the current model);
 //! Phase 6 adds [`build_epsf`] (the core super-resolution iteration
 //! driver that assembles the operator stack into a projected-Landweber
-//! solver). Later phases add the extended-PSF stitching on top.
+//! solver); Phase 7 adds [`stitch_psf`] / [`build_extended_psf`] (the
+//! native-resolution wing robustly stacked from bright stars and
+//! stitched onto the oversampled core with a raised-cosine feather and
+//! one encircled-energy normalization).
 //!
 //! The separable bicubic Catmull-Rom interpolation weights live in the
 //! psf-internal [`kernel`] module so that the forward operator and its
@@ -19,6 +22,7 @@
 mod kernel;
 pub mod accumulate;
 pub mod build_epsf;
+pub mod extended;
 pub mod nuisance;
 pub mod render;
 pub mod robust;
@@ -26,6 +30,10 @@ pub mod robust;
 pub use accumulate::{AccumulateError, accumulate};
 pub use build_epsf::{
     BuildEpsf, BuildEpsfError, BuildEpsfParams, ResidualReweight, build_epsf,
+};
+pub use extended::{
+    ExtendedPsf, ExtendedPsfBuilt, ExtendedPsfError, ExtendedPsfParams,
+    StitchError, StitchParams, build_extended_psf, stitch_psf,
 };
 pub use nuisance::{
     FluxBackground, NuisanceError, NuisanceRefined, refine_nuisance,
