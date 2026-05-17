@@ -130,5 +130,9 @@ pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule
     parent.add_submodule(&image)?;
     let sys_modules = py.import("sys")?.getattr("modules")?;
     sys_modules.set_item("noobase._core.image", &image)?;
+    // Phase 8: build_stamp/StampResult (image::stamp) at the image
+    // level + the nested noobase._core.image.psf submodule (image::psf),
+    // mirroring the Rust core module paths.
+    crate::psf::register(py, &image)?;
     Ok(())
 }

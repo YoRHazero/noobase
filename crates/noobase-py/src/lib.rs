@@ -5,6 +5,7 @@ mod helpers;
 mod image;
 mod overlap;
 mod photometry;
+mod psf;
 mod spectrum;
 
 use crate::grid::PyGrid;
