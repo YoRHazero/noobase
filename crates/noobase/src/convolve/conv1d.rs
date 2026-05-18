@@ -1,6 +1,6 @@
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, Axis};
 
-use crate::convolve::Boundary;
+use crate::convolve::{Boundary, resolve_index};
 use crate::float::Float;
 
 /// 1-D **correlation** of `signal` with `kernel` (the kernel is *not*
@@ -75,39 +75,6 @@ pub fn conv_axis<T: Float>(
         output_lane.assign(&convolved);
     }
     output
-}
-
-/// Resolve a (possibly out-of-range) source index against a signal of
-/// length `length` under `boundary`. Returns `None` only for
-/// [`Boundary::Zero`] out-of-range indices (the tap contributes nothing).
-/// `length` is assumed `>= 1` (callers early-return on empty signals).
-#[inline]
-fn resolve_index(source: isize, length: usize, boundary: Boundary) -> Option<usize> {
-    let n = length as isize;
-    if source >= 0 && source < n {
-        return Some(source as usize);
-    }
-    match boundary {
-        Boundary::Zero => None,
-        Boundary::Nearest => Some(source.clamp(0, n - 1) as usize),
-        Boundary::Reflect => {
-            if n == 1 {
-                return Some(0);
-            }
-            // Half-sample symmetric folding with period 2n: indices in
-            // [n, 2n) mirror back onto [0, n). Works for arbitrarily
-            // out-of-range indices, not just one kernel half-width.
-            let period = 2 * n;
-            let mut folded = source % period;
-            if folded < 0 {
-                folded += period;
-            }
-            if folded >= n {
-                folded = period - 1 - folded;
-            }
-            Some(folded as usize)
-        }
-    }
 }
 
 #[cfg(test)]

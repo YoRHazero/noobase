@@ -5,7 +5,7 @@
 //! `rebin`/`coverage` semantic wrappers -> `Spectrum::rebin` domain
 //! entry):
 //!
-//! - **Pure kernels** ([`conv1d`], [`conv_axis`], and later `conv2d`):
+//! - **Pure kernels** ([`conv1d`], [`conv_axis`], [`conv2d`]):
 //!   NaN-naive `Σ w·v`, no normalization, no boundary renormalization.
 //! - **Normalized-convolution wrappers** (later, `nan` module):
 //!   NaN-as-missing, backend-uniform.
@@ -19,15 +19,17 @@
 //! where convolution mirrors it.
 
 mod conv1d;
+mod conv2d;
 mod gaussian;
 
 pub use conv1d::{conv_axis, conv1d};
+pub use conv2d::conv2d;
 pub use gaussian::{GaussianSampling, gaussian1d};
 
 /// Out-of-bounds handling for the bare correlation kernels.
 ///
-/// Applies only to the pure [`conv1d`] / [`conv_axis`] (and the later
-/// `conv2d`). The normalized-convolution wrappers deliberately do *not*
+/// Applies only to the pure [`conv1d`] / [`conv_axis`] / [`conv2d`].
+/// The normalized-convolution wrappers deliberately do *not*
 /// take a `Boundary`: they treat every out-of-bounds tap as missing
 /// (zero-extension on both the filled and the validity pass), which is a
 /// distinct and mutually exclusive boundary model. Reflect/Nearest would
@@ -61,4 +63,43 @@ pub enum Normalization {
     L2,
     /// Raw samples, left unscaled.
     None,
+}
+
+/// Resolve a (possibly out-of-range) source index against an axis of
+/// length `length` under `boundary`. Returns `None` only for a
+/// [`Boundary::Zero`] out-of-range index (the tap contributes nothing).
+///
+/// This is the single shared boundary resolver for *every* bare kernel
+/// ([`conv1d`], [`conv_axis`], [`conv2d`]) — 2-D correlation applies it
+/// per axis. Keeping one implementation is a structural guarantee that
+/// 1-D and 2-D agree at the edges; were each kernel to fold indices on
+/// its own, any drift would silently desynchronize them. `length` is
+/// assumed `>= 1` (callers early-return on empty axes).
+#[inline]
+pub(crate) fn resolve_index(source: isize, length: usize, boundary: Boundary) -> Option<usize> {
+    let n = length as isize;
+    if source >= 0 && source < n {
+        return Some(source as usize);
+    }
+    match boundary {
+        Boundary::Zero => None,
+        Boundary::Nearest => Some(source.clamp(0, n - 1) as usize),
+        Boundary::Reflect => {
+            if n == 1 {
+                return Some(0);
+            }
+            // Half-sample symmetric folding with period 2n: indices in
+            // [n, 2n) mirror back onto [0, n). Works for arbitrarily
+            // out-of-range indices, not just one kernel half-width.
+            let period = 2 * n;
+            let mut folded = source % period;
+            if folded < 0 {
+                folded += period;
+            }
+            if folded >= n {
+                folded = period - 1 - folded;
+            }
+            Some(folded as usize)
+        }
+    }
 }
