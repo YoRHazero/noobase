@@ -19,8 +19,10 @@
 //! where convolution mirrors it.
 
 mod conv1d;
+mod gaussian;
 
 pub use conv1d::{conv_axis, conv1d};
+pub use gaussian::{GaussianSampling, gaussian1d};
 
 /// Out-of-bounds handling for the bare correlation kernels.
 ///
@@ -43,4 +45,20 @@ pub enum Boundary {
     /// Out-of-bounds taps clamp to the nearest in-bounds sample (edge
     /// replication).
     Nearest,
+}
+
+/// Kernel normalization, applied at kernel-construction time.
+///
+/// This is orthogonal to the boundary renormalization performed by the
+/// NaN wrappers (ROADMAP D4): one is decided when the kernel is built,
+/// the other when the convolution runs. Folding both into a single
+/// "mode" enum would combinatorially explode, so they stay separate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Normalization {
+    /// Σ kernel = 1 — flux-conserving (LSF, PSF).
+    Sum,
+    /// Σ kernel² = 1 — matched-filter S/N optimal (grism line search).
+    L2,
+    /// Raw samples, left unscaled.
+    None,
 }

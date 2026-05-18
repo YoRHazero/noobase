@@ -13,6 +13,7 @@ categories = ["science"]
 [dependencies]
 ndarray = { workspace = true, features = ["rayon"] }
 num-traits = { workspace = true }
+libm = { workspace = true }
 rayon = "1.12.0"
 smallvec = "1.15.1"
 thiserror = { workspace = true }
