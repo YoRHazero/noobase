@@ -5,8 +5,9 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 
-use crate::helpers::{
-    build_grid_from_any, is_float32_dtype, kind_to_str, parse_kind, parse_spacing, spacing_to_str,
+use crate::convert::{
+    build_grid_from_any, is_float32_dtype, kind_to_str, map_inner, parse_kind, parse_spacing,
+    spacing_to_str, with_inner,
 };
 
 #[derive(Clone)]
@@ -257,10 +258,7 @@ impl PyGrid {
     ///     A new copy of the Grid's values. dtype matches the Grid's dtype.
     #[getter]
     fn values<'py>(&self, py: Python<'py>) -> Bound<'py, PyAny> {
-        match &self.inner {
-            GridInner::F32(grid) => grid.values().to_pyarray(py).into_any(),
-            GridInner::F64(grid) => grid.values().to_pyarray(py).into_any(),
-        }
+        with_inner!(&self.inner, GridInner, grid => grid.values().to_pyarray(py).into_any())
     }
 
     /// The spacing (midpoint) convention.
@@ -271,10 +269,7 @@ impl PyGrid {
     ///     Either ``"linear"`` or ``"log"``.
     #[getter]
     fn spacing(&self) -> &'static str {
-        let value = match &self.inner {
-            GridInner::F32(grid) => grid.spacing(),
-            GridInner::F64(grid) => grid.spacing(),
-        };
+        let value = with_inner!(&self.inner, GridInner, grid => grid.spacing());
         spacing_to_str(value)
     }
 
@@ -286,10 +281,7 @@ impl PyGrid {
     ///     Either ``"centers"`` or ``"edges"``.
     #[getter]
     fn kind(&self) -> &'static str {
-        let value = match &self.inner {
-            GridInner::F32(grid) => grid.kind(),
-            GridInner::F64(grid) => grid.kind(),
-        };
+        let value = with_inner!(&self.inner, GridInner, grid => grid.kind());
         kind_to_str(value)
     }
 
@@ -309,10 +301,7 @@ impl PyGrid {
 
     /// Number of values in the grid (NOT the number of bins, which depends on ``kind``).
     fn __len__(&self) -> usize {
-        match &self.inner {
-            GridInner::F32(grid) => grid.len(),
-            GridInner::F64(grid) => grid.len(),
-        }
+        with_inner!(&self.inner, GridInner, grid => grid.len())
     }
 
     /// Return a new Grid expressed as bin edges.
@@ -330,10 +319,7 @@ impl PyGrid {
     ///     dtype. Length is ``len(self) + 1`` when converting from centers,
     ///     otherwise unchanged.
     fn to_edges(&self) -> PyGrid {
-        let inner = match &self.inner {
-            GridInner::F32(grid) => GridInner::F32(grid.to_edges()),
-            GridInner::F64(grid) => GridInner::F64(grid.to_edges()),
-        };
+        let inner = map_inner!(&self.inner, GridInner, grid => grid.to_edges());
         PyGrid::from_inner(inner)
     }
 
@@ -357,10 +343,7 @@ impl PyGrid {
     /// when the original Grid is strictly uniform under its spacing
     /// convention. For irregular Grids the conversion is lossy.
     fn to_centers(&self) -> PyGrid {
-        let inner = match &self.inner {
-            GridInner::F32(grid) => GridInner::F32(grid.to_centers()),
-            GridInner::F64(grid) => GridInner::F64(grid.to_centers()),
-        };
+        let inner = map_inner!(&self.inner, GridInner, grid => grid.to_centers());
         PyGrid::from_inner(inner)
     }
 

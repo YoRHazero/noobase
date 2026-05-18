@@ -1,21 +1,40 @@
 use ::noobase::photometry as core_photometry;
+use ::noobase::photometry::PhotometryConvention;
 use ::noobase::spectroscopy::Spectrum as CoreSpectrum;
 use ndarray::Array1;
-use numpy::{PyArrayDescr, PyReadonlyArray1, ToPyArray, dtype};
-use pyo3::IntoPyObjectExt;
+use numpy::{PyArrayDescr, ToPyArray, dtype};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
 
-use crate::grid::{GridInner, PyGrid};
-use crate::helpers::{
-    build_grid_from_any, coerce_to_grid, dtype_mismatch_error, grid_dtype_name, parse_convention,
-    parse_kind, parse_spacing,
+use crate::convert::{
+    GridChannel, Scalar, band_triple, build_grid_from_any, coerce_to_grid, dispatch_array,
+    dtype_mismatch_error, grid_channel, grid_dtype_name, optional_bool_array1,
+    optional_typed_array1, parse_convention, parse_kind, parse_spacing, required_typed_array1,
+    with_inner,
 };
+use crate::grid::{GridInner, PyGrid};
 
 pub(crate) enum SpectrumInner {
     F32(CoreSpectrum<f32>),
     F64(CoreSpectrum<f64>),
+}
+
+/// Re-wrap a channel-`T` core spectrum into the dtype-erased
+/// [`SpectrumInner`] so the generic constructor stays single-bodied.
+trait IntoSpectrumInner {
+    fn into_spectrum_inner(self) -> SpectrumInner;
+}
+
+impl IntoSpectrumInner for CoreSpectrum<f32> {
+    fn into_spectrum_inner(self) -> SpectrumInner {
+        SpectrumInner::F32(self)
+    }
+}
+
+impl IntoSpectrumInner for CoreSpectrum<f64> {
+    fn into_spectrum_inner(self) -> SpectrumInner {
+        SpectrumInner::F64(self)
+    }
 }
 
 /// A 1-D spectrum: a wavelength Grid plus per-bin flux, optional 1-sigma
@@ -111,47 +130,7 @@ impl PySpectrum {
         };
 
         // Flux determines the spectrum's dtype; wavelength and error must match.
-        if let Ok(flux_f64) = flux.extract::<PyReadonlyArray1<'_, f64>>() {
-            let wavelength_f64 = match &wavelength_grid.inner {
-                GridInner::F64(grid) => grid.clone(),
-                GridInner::F32(_) => {
-                    return Err(dtype_mismatch_error(
-                        "float32",
-                        "float64",
-                        "wavelength vs flux",
-                    ));
-                }
-            };
-            let flux_array: Array1<f64> = flux_f64.as_array().to_owned();
-            let error_array = extract_optional_array::<f64>(error, "error", "float64")?;
-            let mask_array = extract_optional_mask(mask)?;
-            let spectrum =
-                CoreSpectrum::<f64>::new(wavelength_f64, flux_array, error_array, mask_array)
-                    .map_err(|err| PyValueError::new_err(err.to_string()))?;
-            Ok(Self::from_inner(SpectrumInner::F64(spectrum)))
-        } else if let Ok(flux_f32) = flux.extract::<PyReadonlyArray1<'_, f32>>() {
-            let wavelength_f32 = match &wavelength_grid.inner {
-                GridInner::F32(grid) => grid.clone(),
-                GridInner::F64(_) => {
-                    return Err(dtype_mismatch_error(
-                        "float64",
-                        "float32",
-                        "wavelength vs flux",
-                    ));
-                }
-            };
-            let flux_array: Array1<f32> = flux_f32.as_array().to_owned();
-            let error_array = extract_optional_array::<f32>(error, "error", "float32")?;
-            let mask_array = extract_optional_mask(mask)?;
-            let spectrum =
-                CoreSpectrum::<f32>::new(wavelength_f32, flux_array, error_array, mask_array)
-                    .map_err(|err| PyValueError::new_err(err.to_string()))?;
-            Ok(Self::from_inner(SpectrumInner::F32(spectrum)))
-        } else {
-            Err(PyValueError::new_err(
-                "flux must be a 1-D numpy array of dtype float32 or float64",
-            ))
-        }
+        dispatch_array!(flux, 1, "flux", new_impl, wavelength_grid, error, mask)
     }
 
     /// The wavelength axis.
@@ -179,10 +158,8 @@ impl PySpectrum {
     ///     Spectrum's dtype.
     #[getter]
     fn flux<'py>(&self, py: Python<'py>) -> Bound<'py, PyAny> {
-        match &self.inner {
-            SpectrumInner::F32(spectrum) => spectrum.flux().to_pyarray(py).into_any(),
-            SpectrumInner::F64(spectrum) => spectrum.flux().to_pyarray(py).into_any(),
-        }
+        with_inner!(&self.inner, SpectrumInner, spectrum =>
+            spectrum.flux().to_pyarray(py).into_any())
     }
 
     /// The 1-sigma uncertainty array, if present.
@@ -195,14 +172,8 @@ impl PySpectrum {
     ///     the Spectrum's dtype.
     #[getter]
     fn error<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyAny>> {
-        match &self.inner {
-            SpectrumInner::F32(spectrum) => {
-                spectrum.error().map(|view| view.to_pyarray(py).into_any())
-            }
-            SpectrumInner::F64(spectrum) => {
-                spectrum.error().map(|view| view.to_pyarray(py).into_any())
-            }
-        }
+        with_inner!(&self.inner, SpectrumInner, spectrum =>
+            spectrum.error().map(|view| view.to_pyarray(py).into_any()))
     }
 
     /// The per-bin mask, if present.
@@ -216,10 +187,7 @@ impl PySpectrum {
     ///     supplied at construction.
     #[getter]
     fn mask<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyAny>> {
-        let mask_view = match &self.inner {
-            SpectrumInner::F32(spectrum) => spectrum.mask(),
-            SpectrumInner::F64(spectrum) => spectrum.mask(),
-        };
+        let mask_view = with_inner!(&self.inner, SpectrumInner, spectrum => spectrum.mask());
         mask_view.map(|view| view.to_pyarray(py).into_any())
     }
 
@@ -232,10 +200,7 @@ impl PySpectrum {
     ///     Grid's bin count.
     #[getter]
     fn n_bins(&self) -> usize {
-        match &self.inner {
-            SpectrumInner::F32(spectrum) => spectrum.n_bins(),
-            SpectrumInner::F64(spectrum) => spectrum.n_bins(),
-        }
+        with_inner!(&self.inner, SpectrumInner, spectrum => spectrum.n_bins())
     }
 
     /// The numpy dtype of the Spectrum's arrays.
@@ -491,87 +456,13 @@ impl PySpectrum {
         convention: &str,
     ) -> PyResult<Bound<'py, PyAny>> {
         let convention_enum = parse_convention(convention)?;
-        match &self.inner {
-            SpectrumInner::F64(spectrum) => {
-                let transmission_readonly = transmission_values
-                    .extract::<PyReadonlyArray1<'_, f64>>()
-                    .map_err(|_| {
-                        dtype_mismatch_error("float64", "other", "spectrum vs transmission_values")
-                    })?;
-                let transmission_owned: Array1<f64> = transmission_readonly.as_array().to_owned();
-                let transmission_length = transmission_owned.len();
-                let transmission_grid_py = coerce_to_grid(
-                    transmission_grid,
-                    transmission_length,
-                    false,
-                    "transmission",
-                )?;
-                let transmission_core = match &transmission_grid_py.inner {
-                    GridInner::F64(grid) => grid,
-                    GridInner::F32(_) => unreachable!("coerce_to_grid enforces dtype"),
-                };
-                let result = core_photometry::synthetic::<f64>(
-                    spectrum.wavelength(),
-                    spectrum.flux(),
-                    spectrum.error(),
-                    transmission_core,
-                    transmission_owned.view(),
-                    convention_enum,
-                )
-                .map_err(|err| PyValueError::new_err(err.to_string()))?;
-                let tuple = PyTuple::new(
-                    py,
-                    [
-                        result.band_flux.into_py_any(py)?,
-                        match result.band_error {
-                            Some(value) => value.into_py_any(py)?,
-                            None => py.None(),
-                        },
-                        result.coverage.into_py_any(py)?,
-                    ],
-                )?;
-                Ok(tuple.into_any())
-            }
-            SpectrumInner::F32(spectrum) => {
-                let transmission_readonly = transmission_values
-                    .extract::<PyReadonlyArray1<'_, f32>>()
-                    .map_err(|_| {
-                        dtype_mismatch_error("float32", "other", "spectrum vs transmission_values")
-                    })?;
-                let transmission_owned: Array1<f32> = transmission_readonly.as_array().to_owned();
-                let transmission_length = transmission_owned.len();
-                let transmission_grid_py =
-                    coerce_to_grid(transmission_grid, transmission_length, true, "transmission")?;
-                let transmission_core = match &transmission_grid_py.inner {
-                    GridInner::F32(grid) => grid,
-                    GridInner::F64(_) => unreachable!("coerce_to_grid enforces dtype"),
-                };
-                let result = core_photometry::synthetic::<f32>(
-                    spectrum.wavelength(),
-                    spectrum.flux(),
-                    spectrum.error(),
-                    transmission_core,
-                    transmission_owned.view(),
-                    convention_enum,
-                )
-                .map_err(|err| PyValueError::new_err(err.to_string()))?;
-                let band_flux: f64 = result.band_flux as f64;
-                let coverage: f64 = result.coverage as f64;
-                let band_error: Option<f64> = result.band_error.map(|value| value as f64);
-                let tuple = PyTuple::new(
-                    py,
-                    [
-                        band_flux.into_py_any(py)?,
-                        match band_error {
-                            Some(value) => value.into_py_any(py)?,
-                            None => py.None(),
-                        },
-                        coverage.into_py_any(py)?,
-                    ],
-                )?;
-                Ok(tuple.into_any())
-            }
-        }
+        with_inner!(&self.inner, SpectrumInner, spectrum => synthetic_photometry_impl(
+            py,
+            spectrum,
+            transmission_grid,
+            transmission_values,
+            convention_enum,
+        ))
     }
 
     fn __repr__(&self) -> String {
@@ -583,41 +474,49 @@ impl PySpectrum {
     }
 }
 
-fn extract_optional_array<T>(
-    value: Option<&Bound<'_, PyAny>>,
-    name: &str,
-    expected_dtype: &'static str,
-) -> PyResult<Option<Array1<T>>>
+fn new_impl<T: Scalar + GridChannel>(
+    flux: Array1<T>,
+    wavelength_grid: PyGrid,
+    error: Option<&Bound<'_, PyAny>>,
+    mask: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PySpectrum>
 where
-    T: numpy::Element + Clone,
+    CoreSpectrum<T>: IntoSpectrumInner,
 {
-    let Some(bound) = value else {
-        return Ok(None);
-    };
-    if bound.is_none() {
-        return Ok(None);
-    }
-    match bound.extract::<PyReadonlyArray1<'_, T>>() {
-        Ok(array) => Ok(Some(array.as_array().to_owned())),
-        Err(_) => Err(dtype_mismatch_error(
-            expected_dtype,
-            "other",
-            &format!("flux vs {name}"),
-        )),
-    }
+    let wavelength = grid_channel::<T>(wavelength_grid, "wavelength vs flux")?;
+    let error_array = optional_typed_array1::<T>(error, "flux vs error")?;
+    let mask_array = optional_bool_array1(mask, "mask")?;
+    let spectrum = CoreSpectrum::<T>::new(wavelength, flux, error_array, mask_array)
+        .map_err(|err| PyValueError::new_err(err.to_string()))?;
+    Ok(PySpectrum::from_inner(spectrum.into_spectrum_inner()))
 }
 
-fn extract_optional_mask(value: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Array1<bool>>> {
-    let Some(bound) = value else {
-        return Ok(None);
-    };
-    if bound.is_none() {
-        return Ok(None);
-    }
-    match bound.extract::<PyReadonlyArray1<'_, bool>>() {
-        Ok(array) => Ok(Some(array.as_array().to_owned())),
-        Err(_) => Err(PyValueError::new_err(
-            "mask must be a 1-D numpy array of dtype bool",
-        )),
-    }
+fn synthetic_photometry_impl<'py, T: Scalar + GridChannel>(
+    py: Python<'py>,
+    spectrum: &CoreSpectrum<T>,
+    transmission_grid: &Bound<'py, PyAny>,
+    transmission_values: &Bound<'py, PyAny>,
+    convention: PhotometryConvention,
+) -> PyResult<Bound<'py, PyAny>> {
+    let transmission =
+        required_typed_array1::<T>(transmission_values, "spectrum vs transmission_values")?;
+    let transmission_grid_py =
+        coerce_to_grid(transmission_grid, transmission.len(), T::IS_F32, "transmission")?;
+    let transmission_core = grid_channel::<T>(transmission_grid_py, "transmission")
+        .expect("coerce_to_grid enforces dtype");
+    let result = core_photometry::synthetic::<T>(
+        spectrum.wavelength(),
+        spectrum.flux(),
+        spectrum.error(),
+        &transmission_core,
+        transmission.view(),
+        convention,
+    )
+    .map_err(|err| PyValueError::new_err(err.to_string()))?;
+    band_triple(
+        py,
+        result.band_flux.promote(),
+        result.band_error.map(|value| value.promote()),
+        result.coverage.promote(),
+    )
 }

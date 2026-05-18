@@ -5,9 +5,14 @@
 //! keeps every per-binding implementation generic:
 //!
 //! - [`Scalar`] -- the f32 / f64 marker carrying the dtype name used in
-//!   boundary error messages.
+//!   boundary error messages, the `is_f32` channel flag, and the
+//!   uniform f32 -> f64 promotion that keeps the Python scalar surface a
+//!   plain `float`.
 //! - [`dispatch_array!`] -- probe a numpy array argument and forward the
 //!   *owned* array to a generic `impl`, else the canonical `ValueError`.
+//! - [`with_inner!`] / [`map_inner!`] -- collapse the symmetric
+//!   `match &self.inner { F32 => .., F64 => .. }` arms over an
+//!   already-typed channel enum (`GridInner` / `SpectrumInner`).
 //! - [`with_grid_pair!`] -- collapse the same-channel `GridInner` pair
 //!   match shared by every `overlap` function.
 
@@ -18,18 +23,37 @@ use crate::grid::GridInner;
 
 /// The f32 / f64 channel marker: the only two numpy float dtypes the
 /// binding accepts. Carries the dtype name used verbatim in boundary
-/// error messages.
+/// error messages, the `IS_F32` channel flag (for the few core APIs
+/// that take a `bool` dtype selector), and the uniform f32 -> f64
+/// promotion applied to scalar outputs so the Python surface is always
+/// a plain `float`.
 pub(crate) trait Scalar: ::noobase::Float + numpy::Element + Copy + 'static {
     /// The numpy dtype name (`"float32"` / `"float64"`).
     const DTYPE_NAME: &'static str;
+
+    /// Whether this channel is `float32` (the `bool` selector some core
+    /// helpers accept).
+    const IS_F32: bool;
+
+    /// Promote a channel scalar to the f64 the Python surface exposes
+    /// uniformly (identity for f64).
+    fn promote(self) -> f64;
 }
 
 impl Scalar for f32 {
     const DTYPE_NAME: &'static str = "float32";
+    const IS_F32: bool = true;
+    fn promote(self) -> f64 {
+        self as f64
+    }
 }
 
 impl Scalar for f64 {
     const DTYPE_NAME: &'static str = "float64";
+    const IS_F32: bool = false;
+    fn promote(self) -> f64 {
+        self
+    }
 }
 
 /// Build the canonical cross-input dtype-mismatch `ValueError` shared by
@@ -144,6 +168,30 @@ macro_rules! dispatch_array {
     }};
 }
 
+/// Run `$body` for both channels of an already-typed inner enum (e.g.
+/// `GridInner` / `SpectrumInner`), binding the channel value as `$g`.
+/// For getter-style passthrough where `$body` is valid for both
+/// channels.
+macro_rules! with_inner {
+    ($e:expr, $ty:ident, $g:ident => $body:expr) => {
+        match $e {
+            $ty::F32($g) => $body,
+            $ty::F64($g) => $body,
+        }
+    };
+}
+
+/// Like [`with_inner!`] but re-wraps the body result back into the same
+/// channel variant (e.g. `Grid::to_edges` preserving the dtype).
+macro_rules! map_inner {
+    ($e:expr, $ty:ident, $g:ident => $body:expr) => {
+        match $e {
+            $ty::F32($g) => $ty::F32($body),
+            $ty::F64($g) => $ty::F64($body),
+        }
+    };
+}
+
 /// Dispatch a same-channel pair of [`GridInner`]s, binding the two
 /// channel grids as `$ga` / `$gb`. A cross-channel pair yields the
 /// canonical "source grid vs target grid" dtype-mismatch `ValueError`
@@ -165,4 +213,6 @@ macro_rules! with_grid_pair {
 }
 
 pub(crate) use dispatch_array;
+pub(crate) use map_inner;
 pub(crate) use with_grid_pair;
+pub(crate) use with_inner;
