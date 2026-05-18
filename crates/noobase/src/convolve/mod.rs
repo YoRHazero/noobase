@@ -28,6 +28,10 @@ pub use conv2d::conv2d;
 pub use gaussian::{GaussianSampling, gaussian1d};
 pub use nan::{conv_axis_renorm, conv2d_renorm};
 
+// Shared crate-internal: the variable-width LSF path reuses this single
+// erf source so it stays consistent with the fixed-kernel constructor.
+pub(crate) use gaussian::normal_cdf;
+
 /// Out-of-bounds handling for the bare correlation kernels.
 ///
 /// Applies only to the pure [`conv1d`] / [`conv_axis`] / [`conv2d`].

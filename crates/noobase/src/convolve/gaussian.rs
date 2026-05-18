@@ -85,8 +85,13 @@ pub fn gaussian1d<T: Float>(
 }
 
 /// Standard normal CDF `Φ(x) = 0.5 * (1 + erf(x / √2))`.
+///
+/// Shared (`pub(crate)`) so the variable-width LSF path integrates the
+/// Gaussian with the *same* erf as this fixed-kernel constructor — that
+/// single erf source is what keeps the LSF fast path and general path
+/// consistent (ROADMAP §7 cross-path pin).
 #[inline]
-fn normal_cdf(x: f64) -> f64 {
+pub(crate) fn normal_cdf(x: f64) -> f64 {
     0.5 * (1.0 + libm::erf(x / SQRT_2))
 }
 
