@@ -18,8 +18,8 @@ pub(crate) use array::{
 };
 pub(crate) use dtype::{
     Scalar, dispatch_array, dtype_mismatch_error, grid_dtype_name, is_float32_dtype, map_inner,
-    with_grid_pair, with_inner,
+    to_value_error, with_grid_pair, with_inner,
 };
 pub(crate) use enums::{kind_to_str, parse_convention, parse_kind, parse_spacing, spacing_to_str};
 pub(crate) use grid_input::{GridChannel, build_grid_from_any, coerce_to_grid, grid_channel};
-pub(crate) use tuple::band_triple;
+pub(crate) use tuple::{band_pair, band_triple};

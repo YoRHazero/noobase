@@ -2,7 +2,6 @@ use pyo3::prelude::*;
 
 mod convert;
 mod grid;
-mod helpers;
 mod image;
 mod overlap;
 mod photometry;

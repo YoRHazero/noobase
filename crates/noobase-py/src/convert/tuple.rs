@@ -1,8 +1,10 @@
 //! Band-result Python tuple builders.
 //!
 //! Synthetic photometry returns a small fixed-shape tuple where the
-//! error slot is `None` when absent; this is its single home so the
-//! optional-None packing is not re-spelled per dtype arm.
+//! error slot is `None` when absent. Two shapes recur (`(flux, error,
+//! coverage)` for the free functions, `(flux, error)` for the pre-built
+//! operator); this is their single home so the optional-None packing is
+//! not re-spelled per dtype arm.
 
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
@@ -30,5 +32,15 @@ pub(crate) fn band_triple<'py>(
             coverage.into_py_any(py)?,
         ],
     )?;
+    Ok(tuple.into_any())
+}
+
+/// `(band_flux, band_error_or_None)`.
+pub(crate) fn band_pair<'py>(
+    py: Python<'py>,
+    band_flux: f64,
+    band_error: Option<f64>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let tuple = PyTuple::new(py, [band_flux.into_py_any(py)?, optional(py, band_error)?])?;
     Ok(tuple.into_any())
 }

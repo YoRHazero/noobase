@@ -56,6 +56,13 @@ impl Scalar for f64 {
     }
 }
 
+/// Map any core `*Error` to a `ValueError` verbatim. Every core error is
+/// a hard precondition whose `Display` is the authoritative message;
+/// this is the noobase-py-wide convention.
+pub(crate) fn to_value_error<E: std::fmt::Display>(err: E) -> PyErr {
+    PyValueError::new_err(err.to_string())
+}
+
 /// Build the canonical cross-input dtype-mismatch `ValueError` shared by
 /// grid / spectrum / overlap / photometry.
 pub(crate) fn dtype_mismatch_error(left: &str, right: &str, context: &str) -> PyErr {
@@ -216,3 +223,5 @@ pub(crate) use dispatch_array;
 pub(crate) use map_inner;
 pub(crate) use with_grid_pair;
 pub(crate) use with_inner;
+// `to_value_error` is re-exported from `mod.rs` alongside the other
+// items; declared here only because it sits with the error builders.
