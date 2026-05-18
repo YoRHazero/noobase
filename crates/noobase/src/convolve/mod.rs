@@ -7,8 +7,8 @@
 //!
 //! - **Pure kernels** ([`conv1d`], [`conv_axis`], [`conv2d`]):
 //!   NaN-naive `Σ w·v`, no normalization, no boundary renormalization.
-//! - **Normalized-convolution wrappers** (later, `nan` module):
-//!   NaN-as-missing, backend-uniform.
+//! - **Normalized-convolution wrappers** ([`conv2d_renorm`],
+//!   [`conv_axis_renorm`]): NaN-as-missing, backend-uniform.
 //! - **Domain entries** (later, `Spectrum::convolve_lsf`,
 //!   `image::convolve_*`): the only surface that crosses FFI.
 //!
@@ -21,10 +21,12 @@
 mod conv1d;
 mod conv2d;
 mod gaussian;
+mod nan;
 
 pub use conv1d::{conv_axis, conv1d};
 pub use conv2d::conv2d;
 pub use gaussian::{GaussianSampling, gaussian1d};
+pub use nan::{conv_axis_renorm, conv2d_renorm};
 
 /// Out-of-bounds handling for the bare correlation kernels.
 ///
