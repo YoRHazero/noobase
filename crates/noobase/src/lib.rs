@@ -1,6 +1,7 @@
 mod float;
 
 pub mod bins;
+pub mod convolve;
 pub mod image;
 pub mod photometry;
 pub mod spectroscopy;
