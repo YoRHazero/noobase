@@ -19,6 +19,8 @@ noobase = "0.0.1"
 - `spectroscopy::Spectrum` — spectrum container with optional error / mask
 - `photometry::{synthetic, SyntheticOperator}` — synthetic photometry
 - `image::reproject_exact` — surface-brightness-conserving image reprojection via planar polygon clipping (rayon-parallel)
+- `image::stamp::build_stamp` — point-source recenter + fixed-window stamp extraction (sub-pixel centroid recorded, not applied)
+- `image::psf` — oversampled-ePSF / extended-PSF construction stack: `build_epsf`, `build_extended_psf`, plus the `robust_combine` / `solve_flux_background` / `stitch_psf` leaves and the `render` / `accumulate` adjoint pair
 
 ## Status
 

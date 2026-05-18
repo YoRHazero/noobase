@@ -47,6 +47,9 @@ band_flux, band_error, coverage = spectrum.synthetic_photometry(
 - `photometry.SyntheticOperator` — cached synthetic photometry suited for MCMC hot loops
 - `image.reproject_exact` — surface-brightness-conserving image reprojection via planar polygon clipping (rayon-parallel; WCS handling stays in the caller's astropy / gwcs)
 - `image.make_pixel_corners` — turn a pair of `pixel_to_world_values` / `world_to_pixel_values` callables (astropy.wcs or gwcs) into the corner array consumed by `reproject_exact`, with optional `coarse_step` for expensive WCS chains
+- `image.build_stamp` — recenter a point-source cutout into a fixed stamp (sub-pixel centroid recorded, not applied)
+- `image.psf.build_epsf` — oversampled ePSF from a stack of under-sampled stamps via projected Landweber / Irani–Peleg super-resolution
+- `image.psf.build_extended_psf` — bright-star wing stacking + core↔wing stitch into an encircled-energy-normalised extended PSF, with `robust_combine` / `solve_flux_background` / `stitch_psf` exposed as leaves
 
 See the full [project README](https://github.com/YoRHazero/noobase#readme) on GitHub for the complete feature list, the workspace layout, and the development workflow.
 

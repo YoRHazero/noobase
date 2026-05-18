@@ -15,6 +15,10 @@ Foundational pure-function utilities for astronomy analysis. Rust core with Pyth
 - `photometry::synthetic` + `SyntheticOperator` — synthetic photometry through transmission curves (e.g. JWST NIRCam filters)
 - `image::reproject_exact` — surface-brightness-conserving image reprojection via planar polygon clipping (rayon-parallel; WCS handling stays in the caller's astropy / gwcs)
 - `image.make_pixel_corners` — Python-side helper that turns a pair of `pixel_to_world_values` / `world_to_pixel_values` callables (e.g. `astropy.wcs` or `gwcs`) into the corner array consumed by `reproject_exact`
+- `image::build_stamp` — recenter a point-source cutout and extract a fixed-size stamp; the sub-pixel centroid is recorded as natural dither phase, not applied, so the noise stays uncorrelated
+- `image::psf::build_epsf` — oversampled ePSF from a stack of under-sampled stamps, solved as a forward-model super-resolution problem (projected Landweber / Irani–Peleg; flux, background and centroid nuisance solved jointly)
+- `image::psf::build_extended_psf` — bright-star wing stacking plus a core↔wing raised-cosine feather, encircled-energy normalised, into a full diffraction-spike/wing extended PSF
+- `image::psf::{robust_combine, solve_flux_background, stitch_psf}` — lower-level leaves: sign-agnostic σ-clip / median stack reducer, exact 2×2 weighted LLSQ flux+background solver, core↔wing stitch
 
 ## Install
 
@@ -114,6 +118,41 @@ image, footprint, weight = noobase.image.reproject_exact(image_source, pixel_cor
 ```
 
 `make_pixel_corners` works with anything that exposes the two methods, including `astropy.wcs.WCS` and `gwcs`. The callables receive 2-D ndarrays of corner-node pixel coordinates (already shifted by -0.5) and must return world / pixel ndarrays in the same shape — exactly the contract that both libraries already implement.
+
+Build a PSF from a batch of point sources. `build_stamp` recenters each cutout into a fixed window (recording, not applying, the sub-pixel centroid); the stamp stack then drives `build_epsf`, which solves an oversampled ePSF as a forward-model super-resolution problem:
+
+```python
+import numpy as np
+import noobase
+
+# `cutouts`: rough square cutouts, one per point source.
+stamp_size = 25
+stamps = [noobase.image.build_stamp(c, stamp_size) for c in cutouts]
+stamps = [s for s in stamps if s is not None]  # None = centroid / window failed
+
+data = np.stack([s.stamp for s in stamps])        # (N, stamp_size, stamp_size)
+delta_init = np.stack([s.delta for s in stamps])  # (N, 2) sub-pixel phase
+
+oversample = 4
+epsf = noobase.image.psf.build_epsf(data, delta_init, oversample)
+print(epsf.epsf.shape, epsf.converged, epsf.iterations)
+```
+
+For the full diffraction spikes and wings, stack larger cutouts of bright stars and stitch them onto the ePSF core:
+
+```python
+# `wing_cutouts`: larger cutouts of bright (possibly saturated-core) stars.
+wings = [noobase.image.build_stamp(c, 64) for c in wing_cutouts]
+wings = [w for w in wings if w is not None]
+
+extended = noobase.image.psf.build_extended_psf(
+    wing_data=np.stack([w.stamp for w in wings]),
+    wing_delta=np.stack([w.delta for w in wings]),
+    core=epsf.epsf,
+    oversample=oversample,
+)
+model = extended.extended  # ExtendedPsf: .core (oversampled) + .wing (native)
+```
 
 ## Workspace layout
 
