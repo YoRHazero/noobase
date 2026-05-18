@@ -10,11 +10,15 @@ Foundational pure-function utilities for astronomy analysis. Rust core with Pyth
 - `Grid` — 1-D monotonic axis (centers / edges, linear / log)
 - `Spectrum` — wavelength + flux + optional error + optional mask
 - `bins::overlap` — overlap-weighted rebin, variance propagation, coverage
+- `convolve` — pure 1-D / axis / 2-D correlation kernels, Gaussian kernel construction, and NaN-aware normalized-convolution wrappers
 - `Spectrum::rebin` — flux + error + mask through the same operator
 - `Spectrum::to_f_nu` / `to_f_lambda` — flux density convention conversion
+- `Spectrum::convolve_lsf` — Gaussian line-spread-function broadening for noise-free templates (constant resolving power or constant velocity dispersion)
 - `photometry::synthetic` + `SyntheticOperator` — synthetic photometry through transmission curves (e.g. JWST NIRCam filters)
 - `image::reproject_exact` — surface-brightness-conserving image reprojection via planar polygon clipping (rayon-parallel; WCS handling stays in the caller's astropy / gwcs)
 - `image.make_pixel_corners` — Python-side helper that turns a pair of `pixel_to_world_values` / `world_to_pixel_values` callables (e.g. `astropy.wcs` or `gwcs`) into the corner array consumed by `reproject_exact`
+- `image::convolve_psf` — true 2-D PSF convolution with NaN-as-missing edge / mask renormalization
+- `image::convolve_gaussian_axis` — Gaussian axis correlation for grism-style line matched filtering
 - `image::build_stamp` — recenter a point-source cutout and extract a fixed-size stamp; the sub-pixel centroid is recorded as natural dither phase, not applied, so the noise stays uncorrelated
 - `image::psf::build_epsf` — oversampled ePSF from a stack of under-sampled stamps, solved as a forward-model super-resolution problem (projected Landweber / Irani–Peleg; flux, background and centroid nuisance solved jointly)
 - `image::psf::build_extended_psf` — bright-star wing stacking plus a core↔wing raised-cosine feather, encircled-energy normalised, into a full diffraction-spike/wing extended PSF
@@ -62,6 +66,19 @@ Rebin onto a coarser target grid; error and mask flow through the same operator:
 target = np.linspace(1.0, 5.0, 40)
 rebinned = spectrum.rebin(target=target, spacing="linear", kind="centers")
 print(rebinned.flux.shape, rebinned.error.shape)
+```
+
+Broaden a noise-free spectral template with a Gaussian line-spread function. `convolve_lsf` rejects spectra that carry `error` or `mask`, so observed spectra do not get silently re-convolved as if they were templates:
+
+```python
+template = noobase.Spectrum(
+    wavelength=wavelength,
+    flux=flux,
+    spacing="linear",
+    kind="centers",
+)
+broadened = template.convolve_lsf(spec="constant_r", resolving_power=3000.0)
+print(broadened.flux.shape)
 ```
 
 Compute synthetic photometry through a NIRCam-like transmission curve. The return is `(band_flux, band_error, coverage)` — use `coverage` to gate bands that are not fully covered by the spectrum:
@@ -118,6 +135,22 @@ image, footprint, weight = noobase.image.reproject_exact(image_source, pixel_cor
 ```
 
 `make_pixel_corners` works with anything that exposes the two methods, including `astropy.wcs.WCS` and `gwcs`. The callables receive 2-D ndarrays of corner-node pixel coordinates (already shifted by -0.5) and must return world / pixel ndarrays in the same shape — exactly the contract that both libraries already implement.
+
+Convolve an image with a centered PSF, or run a 1-D Gaussian matched filter along one image axis:
+
+```python
+psf = psf / psf.sum()
+model_image = noobase.image.convolve_psf(image_source, psf)
+
+line_response = noobase.image.convolve_gaussian_axis(
+    image_source,
+    sigma=2.5,
+    axis=0,
+    normalization="l2",
+    boundary="zero",
+    renormalize=False,
+)
+```
 
 Build a PSF from a batch of point sources. `build_stamp` recenters each cutout into a fixed window (recording, not applying, the sub-pixel centroid); the stamp stack then drives `build_epsf`, which solves an oversampled ePSF as a forward-model super-resolution problem:
 
