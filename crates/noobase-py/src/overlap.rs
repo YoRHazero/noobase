@@ -1,11 +1,12 @@
+use ::noobase::Grid as CoreGrid;
 use ::noobase::bins::overlap as core_overlap;
 use ndarray::Array1;
-use numpy::{IntoPyArray, PyReadonlyArray1};
+use numpy::IntoPyArray;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::grid::{GridInner, PyGrid};
-use crate::helpers::{dtype_mismatch_error, grid_dtype_name};
+use crate::convert::{Scalar, typed_array1, with_grid_pair};
+use crate::grid::PyGrid;
 
 /// Flux-density-conserving rebin from a source grid onto a target grid.
 ///
@@ -51,47 +52,26 @@ fn overlap_rebin<'py>(
     source_values: &Bound<'py, PyAny>,
     target_grid: &PyGrid,
 ) -> PyResult<Bound<'py, PyAny>> {
-    match (&source_grid.inner, &target_grid.inner) {
-        (GridInner::F64(source), GridInner::F64(target)) => {
-            let array = source_values
-                .extract::<PyReadonlyArray1<'_, f64>>()
-                .map_err(|_| {
-                    dtype_mismatch_error("float64", "values not float64", "source grid vs values")
-                })?;
-            let view = array.as_array();
-            let source_bin_count = source.to_edges().len() - 1;
-            if view.len() != source_bin_count {
-                return Err(PyValueError::new_err(format!(
-                    "source_values length {} does not match source bin count {source_bin_count}",
-                    view.len()
-                )));
-            }
-            let output: Array1<f64> = core_overlap::rebin(source, view, target);
-            Ok(output.into_pyarray(py).into_any())
-        }
-        (GridInner::F32(source), GridInner::F32(target)) => {
-            let array = source_values
-                .extract::<PyReadonlyArray1<'_, f32>>()
-                .map_err(|_| {
-                    dtype_mismatch_error("float32", "values not float32", "source grid vs values")
-                })?;
-            let view = array.as_array();
-            let source_bin_count = source.to_edges().len() - 1;
-            if view.len() != source_bin_count {
-                return Err(PyValueError::new_err(format!(
-                    "source_values length {} does not match source bin count {source_bin_count}",
-                    view.len()
-                )));
-            }
-            let output: Array1<f32> = core_overlap::rebin(source, view, target);
-            Ok(output.into_pyarray(py).into_any())
-        }
-        (left, right) => Err(dtype_mismatch_error(
-            grid_dtype_name(left),
-            grid_dtype_name(right),
-            "source grid vs target grid",
-        )),
+    with_grid_pair!(&source_grid.inner, &target_grid.inner, (source, target) =>
+        rebin_impl(py, source, source_values, target))
+}
+
+fn rebin_impl<'py, T: Scalar>(
+    py: Python<'py>,
+    source: &CoreGrid<T>,
+    source_values: &Bound<'py, PyAny>,
+    target: &CoreGrid<T>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let values = typed_array1::<T>(source_values, "values", "source grid vs values")?;
+    let source_bin_count = source.to_edges().len() - 1;
+    if values.len() != source_bin_count {
+        return Err(PyValueError::new_err(format!(
+            "source_values length {} does not match source bin count {source_bin_count}",
+            values.len()
+        )));
     }
+    let output: Array1<T> = core_overlap::rebin(source, values.view(), target);
+    Ok(output.into_pyarray(py).into_any())
 }
 
 /// Variance propagation for ``rebin`` assuming independent source bins.
@@ -137,55 +117,26 @@ fn overlap_rebin_variance<'py>(
     source_variance: &Bound<'py, PyAny>,
     target_grid: &PyGrid,
 ) -> PyResult<Bound<'py, PyAny>> {
-    match (&source_grid.inner, &target_grid.inner) {
-        (GridInner::F64(source), GridInner::F64(target)) => {
-            let array = source_variance
-                .extract::<PyReadonlyArray1<'_, f64>>()
-                .map_err(|_| {
-                    dtype_mismatch_error(
-                        "float64",
-                        "variance not float64",
-                        "source grid vs variance",
-                    )
-                })?;
-            let view = array.as_array();
-            let source_bin_count = source.to_edges().len() - 1;
-            if view.len() != source_bin_count {
-                return Err(PyValueError::new_err(format!(
-                    "source_variance length {} does not match source bin count {source_bin_count}",
-                    view.len()
-                )));
-            }
-            let output: Array1<f64> = core_overlap::rebin_variance(source, view, target);
-            Ok(output.into_pyarray(py).into_any())
-        }
-        (GridInner::F32(source), GridInner::F32(target)) => {
-            let array = source_variance
-                .extract::<PyReadonlyArray1<'_, f32>>()
-                .map_err(|_| {
-                    dtype_mismatch_error(
-                        "float32",
-                        "variance not float32",
-                        "source grid vs variance",
-                    )
-                })?;
-            let view = array.as_array();
-            let source_bin_count = source.to_edges().len() - 1;
-            if view.len() != source_bin_count {
-                return Err(PyValueError::new_err(format!(
-                    "source_variance length {} does not match source bin count {source_bin_count}",
-                    view.len()
-                )));
-            }
-            let output: Array1<f32> = core_overlap::rebin_variance(source, view, target);
-            Ok(output.into_pyarray(py).into_any())
-        }
-        (left, right) => Err(dtype_mismatch_error(
-            grid_dtype_name(left),
-            grid_dtype_name(right),
-            "source grid vs target grid",
-        )),
+    with_grid_pair!(&source_grid.inner, &target_grid.inner, (source, target) =>
+        rebin_variance_impl(py, source, source_variance, target))
+}
+
+fn rebin_variance_impl<'py, T: Scalar>(
+    py: Python<'py>,
+    source: &CoreGrid<T>,
+    source_variance: &Bound<'py, PyAny>,
+    target: &CoreGrid<T>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let variance = typed_array1::<T>(source_variance, "variance", "source grid vs variance")?;
+    let source_bin_count = source.to_edges().len() - 1;
+    if variance.len() != source_bin_count {
+        return Err(PyValueError::new_err(format!(
+            "source_variance length {} does not match source bin count {source_bin_count}",
+            variance.len()
+        )));
     }
+    let output: Array1<T> = core_overlap::rebin_variance(source, variance.view(), target);
+    Ok(output.into_pyarray(py).into_any())
 }
 
 /// Geometric coverage fraction of each target bin by the source range.
@@ -221,21 +172,17 @@ fn overlap_coverage<'py>(
     source_grid: &PyGrid,
     target_grid: &PyGrid,
 ) -> PyResult<Bound<'py, PyAny>> {
-    match (&source_grid.inner, &target_grid.inner) {
-        (GridInner::F64(source), GridInner::F64(target)) => {
-            let output: Array1<f64> = core_overlap::coverage(source, target);
-            Ok(output.into_pyarray(py).into_any())
-        }
-        (GridInner::F32(source), GridInner::F32(target)) => {
-            let output: Array1<f32> = core_overlap::coverage(source, target);
-            Ok(output.into_pyarray(py).into_any())
-        }
-        (left, right) => Err(dtype_mismatch_error(
-            grid_dtype_name(left),
-            grid_dtype_name(right),
-            "source grid vs target grid",
-        )),
-    }
+    with_grid_pair!(&source_grid.inner, &target_grid.inner, (source, target) =>
+        coverage_impl(py, source, target))
+}
+
+fn coverage_impl<'py, T: Scalar>(
+    py: Python<'py>,
+    source: &CoreGrid<T>,
+    target: &CoreGrid<T>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let output: Array1<T> = core_overlap::coverage(source, target);
+    Ok(output.into_pyarray(py).into_any())
 }
 
 pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule>) -> PyResult<()> {

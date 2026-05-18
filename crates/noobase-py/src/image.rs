@@ -1,10 +1,12 @@
 use ::noobase::image as core_image;
 use ::noobase::image::ReprojectError;
-use ndarray::{Array2, Array3};
-use numpy::{IntoPyArray, PyReadonlyArray2, PyReadonlyArray3};
+use ndarray::{Array2, ArrayView3};
+use numpy::{IntoPyArray, PyReadonlyArray3};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
+
+use crate::convert::{Scalar, dispatch_array};
 
 fn map_reproject_error(err: ReprojectError) -> PyErr {
     PyValueError::new_err(err.to_string())
@@ -97,22 +99,25 @@ fn reproject_exact_function<'py>(
                 "pixel_corners must be a 3-D numpy array of dtype float64 with shape (H_out + 1, W_out + 1, 2)",
             )
         })?;
-    let corners_owned: Array3<f64> = corners_readonly.as_array().to_owned();
+    let corners_owned = corners_readonly.as_array().to_owned();
 
-    let output = if let Ok(image_readonly) = image_in.extract::<PyReadonlyArray2<'_, f64>>() {
-        let image_owned: Array2<f64> = image_readonly.as_array().to_owned();
-        core_image::reproject_exact::<f64>(image_owned.view(), corners_owned.view())
-            .map_err(map_reproject_error)?
-    } else if let Ok(image_readonly) = image_in.extract::<PyReadonlyArray2<'_, f32>>() {
-        let image_owned: Array2<f32> = image_readonly.as_array().to_owned();
-        core_image::reproject_exact::<f32>(image_owned.view(), corners_owned.view())
-            .map_err(map_reproject_error)?
-    } else {
-        return Err(PyValueError::new_err(
-            "image_in must be a 2-D numpy array of dtype float32 or float64",
-        ));
-    };
+    dispatch_array!(
+        image_in,
+        2,
+        "image_in",
+        reproject_exact_impl,
+        py,
+        corners_owned.view()
+    )
+}
 
+fn reproject_exact_impl<'py, T: Scalar>(
+    image: Array2<T>,
+    py: Python<'py>,
+    corners: ArrayView3<'_, f64>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let output =
+        core_image::reproject_exact::<T>(image.view(), corners).map_err(map_reproject_error)?;
     let tuple = PyTuple::new(
         py,
         [

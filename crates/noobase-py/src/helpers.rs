@@ -7,6 +7,10 @@ use pyo3::prelude::*;
 
 use crate::grid::{GridInner, PyGrid};
 
+// Canonical homes for these moved to `crate::convert`; re-exported here
+// for the binding files not yet migrated off `helpers`.
+pub(crate) use crate::convert::{dtype_mismatch_error, grid_dtype_name, is_float32_dtype};
+
 pub(crate) fn parse_spacing(spacing: &str) -> PyResult<Spacing> {
     match spacing {
         "linear" => Ok(Spacing::Linear),
@@ -60,23 +64,6 @@ pub(crate) fn build_grid_from_any(
         Err(PyValueError::new_err(
             "values must be a 1-D numpy array of dtype float32 or float64",
         ))
-    }
-}
-
-pub(crate) fn dtype_mismatch_error(
-    left: &'static str,
-    right: &'static str,
-    context: &str,
-) -> PyErr {
-    PyValueError::new_err(format!(
-        "dtype mismatch: {context} ({left} vs {right}); align dtypes explicitly"
-    ))
-}
-
-pub(crate) fn grid_dtype_name(inner: &GridInner) -> &'static str {
-    match inner {
-        GridInner::F32(_) => "float32",
-        GridInner::F64(_) => "float64",
     }
 }
 
@@ -174,25 +161,3 @@ pub(crate) fn coerce_to_grid(
     }
 }
 
-pub(crate) fn is_float32_dtype(
-    py: Python<'_>,
-    dtype_arg: Option<&Bound<'_, PyAny>>,
-) -> PyResult<bool> {
-    let Some(value) = dtype_arg else {
-        return Ok(false);
-    };
-    if value.is_none() {
-        return Ok(false);
-    }
-    let numpy_module = py.import("numpy")?;
-    let numpy_dtype_factory = numpy_module.getattr("dtype")?;
-    let resolved = numpy_dtype_factory.call1((value,))?;
-    let resolved_name: String = resolved.getattr("name")?.extract()?;
-    match resolved_name.as_str() {
-        "float32" => Ok(true),
-        "float64" => Ok(false),
-        other => Err(PyValueError::new_err(format!(
-            "unsupported dtype {other:?}; expected float32 or float64"
-        ))),
-    }
-}
