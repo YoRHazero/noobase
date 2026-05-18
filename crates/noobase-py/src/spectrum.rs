@@ -564,8 +564,12 @@ fn synthetic_photometry_impl<'py, T: Scalar + GridChannel>(
 ) -> PyResult<Bound<'py, PyAny>> {
     let transmission =
         required_typed_array1::<T>(transmission_values, "spectrum vs transmission_values")?;
-    let transmission_grid_py =
-        coerce_to_grid(transmission_grid, transmission.len(), T::IS_F32, "transmission")?;
+    let transmission_grid_py = coerce_to_grid(
+        transmission_grid,
+        transmission.len(),
+        T::IS_F32,
+        "transmission",
+    )?;
     let transmission_core = grid_channel::<T>(transmission_grid_py, "transmission")
         .expect("coerce_to_grid enforces dtype");
     let result = core_photometry::synthetic::<T>(

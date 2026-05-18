@@ -267,9 +267,7 @@ pub struct BuildEpsf {
 pub enum BuildEpsfError {
     #[error("oversample must be odd; got {oversample}")]
     OversampleNotOdd { oversample: usize },
-    #[error(
-        "recovered stamp_size (data.shape()[1]) must be odd; got {stamp_size}"
-    )]
+    #[error("recovered stamp_size (data.shape()[1]) must be odd; got {stamp_size}")]
     StampSizeEven { stamp_size: usize },
     #[error(
         "batch dimensions disagree: data shape {data:?} must be (N, s, s) with s odd and delta_init shape {delta_init:?} must be (N, 2)"
@@ -283,9 +281,7 @@ pub enum BuildEpsfError {
         weight: (usize, usize, usize),
         data: (usize, usize, usize),
     },
-    #[error(
-        "psi_init shape {psi_init:?} must equal the model grid {expected:?}"
-    )]
+    #[error("psi_init shape {psi_init:?} must equal the model grid {expected:?}")]
     PsiInitShapeMismatch {
         psi_init: (usize, usize),
         expected: (usize, usize),
@@ -293,7 +289,11 @@ pub enum BuildEpsfError {
     #[error(
         "build_epsf requires max_iter > 0, tol/step/nuisance_tol finite and > 0, nuisance_max_iter > 0, and any ResidualReweight c finite and > 0; got max_iter = {max_iter}, tol = {tol}, step = {step}"
     )]
-    ParamsInvalid { max_iter: usize, tol: f64, step: f64 },
+    ParamsInvalid {
+        max_iter: usize,
+        tol: f64,
+        step: f64,
+    },
 }
 
 /// Solve the core oversampled effective PSF from a caller-assembled
@@ -346,13 +346,13 @@ pub fn build_epsf<T: Float>(
 ) -> Result<BuildEpsf, BuildEpsfError> {
     // --- Hard preconditions (returned as Err; no Ok(None) path). The
     // check order is the documented order. ---
-    if oversample % 2 == 0 {
+    if oversample.is_multiple_of(2) {
         // Also rejects oversample == 0 (0 is even, hence not odd).
         return Err(BuildEpsfError::OversampleNotOdd { oversample });
     }
     let batch_size = data.shape()[0];
     let stamp_size = data.shape()[1];
-    if stamp_size % 2 == 0 {
+    if stamp_size.is_multiple_of(2) {
         // Catches the degenerate empty stamp (stamp_size == 0) too.
         return Err(BuildEpsfError::StampSizeEven { stamp_size });
     }
@@ -409,8 +409,7 @@ pub fn build_epsf<T: Float>(
 
     // --- Internal f64: upcast once at the boundary; T never threads
     // through the loop (mirrors robust/nuisance). ---
-    let data_f: Array3<f64> =
-        data.mapv(|value| value.to_f64().unwrap_or(f64::NAN));
+    let data_f: Array3<f64> = data.mapv(|value| value.to_f64().unwrap_or(f64::NAN));
     let weight_base: Option<Array3<f64>> = weight
         .as_ref()
         .map(|w| w.mapv(|value| value.to_f64().unwrap_or(f64::NAN)));
@@ -453,9 +452,7 @@ pub fn build_epsf<T: Float>(
         weight_base.as_ref().map(|w| w.view()),
         delta.view(),
     )
-    .expect(
-        "solve_flux_background preconditions are guaranteed by build_epsf validation",
-    );
+    .expect("solve_flux_background preconditions are guaranteed by build_epsf validation");
     let mut flux = initial.flux;
     let mut background = initial.background;
     let mut ok = initial.ok;
@@ -481,8 +478,7 @@ pub fn build_epsf<T: Float>(
         for n in 0..batch_size {
             for i in 0..stamp_size {
                 for j in 0..stamp_size {
-                    residual[(n, i, j)] =
-                        data_f[(n, i, j)] - model[(n, i, j)];
+                    residual[(n, i, j)] = data_f[(n, i, j)] - model[(n, i, j)];
                 }
             }
         }
@@ -503,10 +499,8 @@ pub fn build_epsf<T: Float>(
 
         // W_acc / R_acc for the psi accumulate: !ok stars zeroed, every
         // non-finite weight/residual zeroed so the scatter stays finite.
-        let mut weight_acc =
-            Array3::<f64>::zeros((batch_size, stamp_size, stamp_size));
-        let mut residual_acc =
-            Array3::<f64>::zeros((batch_size, stamp_size, stamp_size));
+        let mut weight_acc = Array3::<f64>::zeros((batch_size, stamp_size, stamp_size));
+        let mut residual_acc = Array3::<f64>::zeros((batch_size, stamp_size, stamp_size));
         for n in 0..batch_size {
             let star_ok = ok[n];
             for i in 0..stamp_size {
@@ -542,9 +536,7 @@ pub fn build_epsf<T: Float>(
             delta_safe.view(),
             flux_safe.view(),
         )
-        .expect(
-            "accumulate preconditions are guaranteed by build_epsf validation",
-        );
+        .expect("accumulate preconditions are guaranteed by build_epsf validation");
         let lambda = if operator_norm.is_finite() && operator_norm > 0.0 {
             params.step / operator_norm
         } else {
@@ -636,11 +628,7 @@ fn relative_l2_change(psi: &Array2<f64>, psi_next: &Array2<f64>) -> f64 {
 /// `sum(psi) / os^2 = 1` and fold the reciprocal scale into `flux`
 /// (the `flux <-> psi` product is invariant). A non-finite /
 /// non-positive volume is left untouched (degenerate psi).
-fn gauge_unit_volume(
-    psi: &mut Array2<f64>,
-    flux: &mut Array1<f64>,
-    oversample: usize,
-) {
+fn gauge_unit_volume(psi: &mut Array2<f64>, flux: &mut Array1<f64>, oversample: usize) {
     let volume = psi.sum() / (oversample * oversample) as f64;
     if volume.is_finite() && volume > 0.0 {
         psi.mapv_inplace(|x| x / volume);
@@ -697,7 +685,11 @@ fn reweight_factor(
                 factor[(n, i, j)] = match method {
                     ResidualReweight::None => 1.0,
                     ResidualReweight::Huber { c } => {
-                        if z <= c { 1.0 } else { c / z }
+                        if z <= c {
+                            1.0
+                        } else {
+                            c / z
+                        }
                     }
                     ResidualReweight::Tukey { c } => {
                         if z <= c {
@@ -736,8 +728,7 @@ fn global_mad_sigma(residual: &Array3<f64>, ok: &Array1<bool>) -> f64 {
         return f64::NAN;
     }
     let center = median(&mut samples.clone());
-    let mut deviations: Vec<f64> =
-        samples.iter().map(|x| (x - center).abs()).collect();
+    let mut deviations: Vec<f64> = samples.iter().map(|x| (x - center).abs()).collect();
     let mad = median(&mut deviations);
     MAD_TO_SIGMA * mad
 }
@@ -815,9 +806,7 @@ fn power_iteration_norm(
             delta_safe.view(),
             flux_safe.view(),
         )
-        .expect(
-            "accumulate preconditions are guaranteed by build_epsf validation",
-        );
+        .expect("accumulate preconditions are guaranteed by build_epsf validation");
         let next_norm = l2_norm(at_w_a_probe.iter());
         if !next_norm.is_finite() {
             return 0.0;
@@ -862,9 +851,7 @@ fn run_refine(
         nuisance_max_iter,
         nuisance_tol,
     )
-    .expect(
-        "refine_nuisance preconditions are guaranteed by build_epsf validation",
-    );
+    .expect("refine_nuisance preconditions are guaranteed by build_epsf validation");
     flux.assign(&refined.flux);
     background.assign(&refined.background);
     delta.assign(&refined.delta);
@@ -888,8 +875,7 @@ fn seed_psi(
     if batch_size == 0 {
         return Array2::<f64>::from_elem((side, side), 1.0);
     }
-    let mut normalized =
-        Array3::<f64>::from_elem((batch_size, stamp_size, stamp_size), f64::NAN);
+    let mut normalized = Array3::<f64>::from_elem((batch_size, stamp_size, stamp_size), f64::NAN);
     for n in 0..batch_size {
         let stamp = data_f.index_axis(Axis(0), n);
         let background = border_ring_median(&stamp, stamp_size);
@@ -947,10 +933,7 @@ fn seed_psi(
 
 /// Robust median of a stamp's border ring (first/last row and column);
 /// `0.0` when the ring has no finite pixel.
-fn border_ring_median(
-    stamp: &ArrayView2<f64>,
-    stamp_size: usize,
-) -> f64 {
+fn border_ring_median(stamp: &ArrayView2<f64>, stamp_size: usize) -> f64 {
     if stamp_size == 0 {
         return 0.0;
     }
@@ -1031,8 +1014,7 @@ mod tests {
             let dp = p as f64 - center;
             let dq = q as f64 - center;
             let g = (-0.5 * (dp * dp + dq * dq) / (sigma * sigma)).exp();
-            g * (1.0 + 0.20 * (p as f64 / side as f64))
-                * (1.0 + 0.12 * (q as f64 / side as f64))
+            g * (1.0 + 0.20 * (p as f64 / side as f64)) * (1.0 + 0.12 * (q as f64 / side as f64))
         })
     }
 
@@ -1063,11 +1045,7 @@ mod tests {
 
     /// Relative L2 reconstruction error `‖render(out) - data‖ / ‖data‖`
     /// (gauge-invariant: independent of the psi/flux split).
-    fn recon_rel_error(
-        result: &BuildEpsf,
-        oversample: usize,
-        data: &Array3<f64>,
-    ) -> f64 {
+    fn recon_rel_error(result: &BuildEpsf, oversample: usize, data: &Array3<f64>) -> f64 {
         let model = render(
             result.epsf.view(),
             oversample,
@@ -1136,23 +1114,14 @@ mod tests {
 
         // Shape, unit-volume gauge, non-negativity.
         assert_eq!(result.epsf.dim(), (side, side));
-        assert!(
-            (result.epsf.sum() / (oversample * oversample) as f64 - 1.0).abs()
-                < 1e-9
-        );
+        assert!((result.epsf.sum() / (oversample * oversample) as f64 - 1.0).abs() < 1e-9);
         assert!(result.epsf.iter().all(|&x| x >= 0.0 && x.is_finite()));
         assert!(result.ok.iter().all(|&o| o));
         // ~1 round for a clean warm start (fork 5 / decision 4).
-        assert!(
-            result.iterations <= 3,
-            "iterations = {}",
-            result.iterations
-        );
+        assert!(result.iterations <= 3, "iterations = {}", result.iterations);
         assert!(result.converged);
         // psi recovered up to the unit-volume gauge.
-        assert!(
-            rel_l2(&result.epsf, &unit_volume(&psi_true, oversample)) < 1e-4
-        );
+        assert!(rel_l2(&result.epsf, &unit_volume(&psi_true, oversample)) < 1e-4);
         // Star table + reconstruction (gauge-invariant pin).
         assert!(recon_rel_error(&result, oversample, &data) < 1e-6);
         for n in 0..n {
@@ -1191,23 +1160,13 @@ mod tests {
             nuisance_max_iter: 3,
             nuisance_tol: 1e-8,
         };
-        let result = build_epsf::<f64>(
-            data.view(),
-            None,
-            delta.view(),
-            oversample,
-            None,
-            params,
-        )
-        .unwrap();
+        let result =
+            build_epsf::<f64>(data.view(), None, delta.view(), oversample, None, params).unwrap();
 
         assert_eq!(result.epsf.dim(), (side, side));
         assert!(result.epsf.iter().all(|&x| x >= 0.0 && x.is_finite()));
         assert!(result.ok.iter().all(|&o| o));
-        assert!(
-            (result.epsf.sum() / (oversample * oversample) as f64 - 1.0).abs()
-                < 1e-6
-        );
+        assert!((result.epsf.sum() / (oversample * oversample) as f64 - 1.0).abs() < 1e-6);
         // The crude block-replicated seed has been sharpened well past
         // any blurred starting point.
         // Gauge-invariant reconstruction is the meaningful pin.
@@ -1321,8 +1280,7 @@ mod tests {
         let side = oversample * stamp_size;
         let mut psi = gaussian_epsf(side, oversample as f64 * 1.5, 42.0);
         let mut flux = Array1::from_vec(vec![3.0, 7.5]);
-        let delta = Array2::from_shape_vec((2, 2), vec![0.1, -0.2, -0.3, 0.05])
-            .unwrap();
+        let delta = Array2::from_shape_vec((2, 2), vec![0.1, -0.2, -0.3, 0.05]).unwrap();
         let background = Array1::from_vec(vec![1.0, 2.0]);
         let before = render(
             psi.view(),
@@ -1335,9 +1293,7 @@ mod tests {
 
         gauge_unit_volume(&mut psi, &mut flux, oversample);
 
-        assert!(
-            (psi.sum() / (oversample * oversample) as f64 - 1.0).abs() < 1e-12
-        );
+        assert!((psi.sum() / (oversample * oversample) as f64 - 1.0).abs() < 1e-12);
         let after = render(
             psi.view(),
             oversample,
@@ -1354,10 +1310,7 @@ mod tests {
 
     // --- Residual reweight reduces and symmetrizes outlier bias. ---
 
-    fn build_with_outlier(
-        sign: f64,
-        method: ResidualReweight,
-    ) -> (BuildEpsf, Array2<f64>, usize) {
+    fn build_with_outlier(sign: f64, method: ResidualReweight) -> (BuildEpsf, Array2<f64>, usize) {
         let oversample = 5;
         let stamp_size = 7;
         let side = oversample * stamp_size;
@@ -1394,24 +1347,15 @@ mod tests {
 
     #[test]
     fn residual_reweight_reduces_outlier_bias() {
-        let (none_res, truth, os) =
-            build_with_outlier(1.0, ResidualReweight::None);
-        let (huber_res, _, _) =
-            build_with_outlier(1.0, ResidualReweight::Huber { c: 3.0 });
-        let (tukey_res, _, _) =
-            build_with_outlier(1.0, ResidualReweight::Tukey { c: 4.0 });
+        let (none_res, truth, os) = build_with_outlier(1.0, ResidualReweight::None);
+        let (huber_res, _, _) = build_with_outlier(1.0, ResidualReweight::Huber { c: 3.0 });
+        let (tukey_res, _, _) = build_with_outlier(1.0, ResidualReweight::Tukey { c: 4.0 });
 
         let err_none = rel_l2(&none_res.epsf, &truth);
         let err_huber = rel_l2(&huber_res.epsf, &truth);
         let err_tukey = rel_l2(&tukey_res.epsf, &truth);
-        assert!(
-            err_huber < err_none,
-            "huber {err_huber} vs none {err_none}"
-        );
-        assert!(
-            err_tukey < err_none,
-            "tukey {err_tukey} vs none {err_none}"
-        );
+        assert!(err_huber < err_none, "huber {err_huber} vs none {err_none}");
+        assert!(err_tukey < err_none, "tukey {err_tukey} vs none {err_none}");
         let _ = os;
     }
 
@@ -1419,10 +1363,8 @@ mod tests {
     fn residual_reweight_is_sign_agnostic() {
         // +outlier and -outlier must yield the same recovery error
         // (decision 5: rejection by magnitude, never by sign).
-        let (plus, truth, _) =
-            build_with_outlier(1.0, ResidualReweight::Huber { c: 3.0 });
-        let (minus, _, _) =
-            build_with_outlier(-1.0, ResidualReweight::Huber { c: 3.0 });
+        let (plus, truth, _) = build_with_outlier(1.0, ResidualReweight::Huber { c: 3.0 });
+        let (minus, _, _) = build_with_outlier(-1.0, ResidualReweight::Huber { c: 3.0 });
         let err_plus = rel_l2(&plus.epsf, &truth);
         let err_minus = rel_l2(&minus.epsf, &truth);
         assert!(
@@ -1475,9 +1417,7 @@ mod tests {
             }
         }
         assert!(result.epsf.iter().all(|&x| x >= 0.0 && x.is_finite()));
-        assert!(
-            rel_l2(&result.epsf, &unit_volume(&psi_true, oversample)) < 1e-3
-        );
+        assert!(rel_l2(&result.epsf, &unit_volume(&psi_true, oversample)) < 1e-3);
     }
 
     // --- N = 1 and the empty batch. ---
@@ -1582,9 +1522,7 @@ mod tests {
         // Both recover the truth; the only difference is the f32 input
         // rounding.
         assert!(rel_l2(&r64.epsf, &r32.epsf) < 1e-3);
-        assert!(
-            rel_l2(&r64.epsf, &unit_volume(&psi_true, oversample)) < 1e-3
-        );
+        assert!(rel_l2(&r64.epsf, &unit_volume(&psi_true, oversample)) < 1e-3);
     }
 
     // --- Default params are sane. ---
@@ -1610,26 +1548,12 @@ mod tests {
     fn err_oversample_not_odd() {
         let data = Array3::<f64>::zeros((2, 7, 7));
         let delta = Array2::<f64>::zeros((2, 2));
-        let err = build_epsf::<f64>(
-            data.view(),
-            None,
-            delta.view(),
-            4,
-            None,
-            ok_params(),
-        )
-        .unwrap_err();
+        let err =
+            build_epsf::<f64>(data.view(), None, delta.view(), 4, None, ok_params()).unwrap_err();
         assert_eq!(err, BuildEpsfError::OversampleNotOdd { oversample: 4 });
         // oversample == 0 is also rejected here.
-        let err0 = build_epsf::<f64>(
-            data.view(),
-            None,
-            delta.view(),
-            0,
-            None,
-            ok_params(),
-        )
-        .unwrap_err();
+        let err0 =
+            build_epsf::<f64>(data.view(), None, delta.view(), 0, None, ok_params()).unwrap_err();
         assert_eq!(err0, BuildEpsfError::OversampleNotOdd { oversample: 0 });
     }
 
@@ -1637,15 +1561,8 @@ mod tests {
     fn err_stamp_size_even() {
         let data = Array3::<f64>::zeros((2, 6, 6));
         let delta = Array2::<f64>::zeros((2, 2));
-        let err = build_epsf::<f64>(
-            data.view(),
-            None,
-            delta.view(),
-            5,
-            None,
-            ok_params(),
-        )
-        .unwrap_err();
+        let err =
+            build_epsf::<f64>(data.view(), None, delta.view(), 5, None, ok_params()).unwrap_err();
         assert_eq!(err, BuildEpsfError::StampSizeEven { stamp_size: 6 });
     }
 
@@ -1654,15 +1571,8 @@ mod tests {
         // Non-square stamp.
         let data = Array3::<f64>::zeros((2, 7, 5));
         let delta = Array2::<f64>::zeros((2, 2));
-        let err = build_epsf::<f64>(
-            data.view(),
-            None,
-            delta.view(),
-            5,
-            None,
-            ok_params(),
-        )
-        .unwrap_err();
+        let err =
+            build_epsf::<f64>(data.view(), None, delta.view(), 5, None, ok_params()).unwrap_err();
         assert_eq!(
             err,
             BuildEpsfError::BatchLengthMismatch {
@@ -1673,15 +1583,8 @@ mod tests {
         // delta_init not (N, 2).
         let data2 = Array3::<f64>::zeros((2, 7, 7));
         let delta_bad = Array2::<f64>::zeros((3, 2));
-        let err2 = build_epsf::<f64>(
-            data2.view(),
-            None,
-            delta_bad.view(),
-            5,
-            None,
-            ok_params(),
-        )
-        .unwrap_err();
+        let err2 = build_epsf::<f64>(data2.view(), None, delta_bad.view(), 5, None, ok_params())
+            .unwrap_err();
         assert_eq!(
             err2,
             BuildEpsfError::BatchLengthMismatch {
@@ -1780,15 +1683,8 @@ mod tests {
             },
         ];
         for params in cases {
-            let err = build_epsf::<f64>(
-                data.view(),
-                None,
-                delta.view(),
-                5,
-                None,
-                params,
-            )
-            .unwrap_err();
+            let err =
+                build_epsf::<f64>(data.view(), None, delta.view(), 5, None, params).unwrap_err();
             assert!(matches!(err, BuildEpsfError::ParamsInvalid { .. }));
         }
         // A valid Huber c is accepted.
@@ -1796,17 +1692,7 @@ mod tests {
             residual_reweight: ResidualReweight::Huber { c: 3.0 },
             ..Default::default()
         };
-        assert!(
-            build_epsf::<f64>(
-                data.view(),
-                None,
-                delta.view(),
-                5,
-                None,
-                okp
-            )
-            .is_ok()
-        );
+        assert!(build_epsf::<f64>(data.view(), None, delta.view(), 5, None, okp).is_ok());
     }
 
     #[test]

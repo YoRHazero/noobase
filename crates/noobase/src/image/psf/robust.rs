@@ -191,9 +191,7 @@ pub fn robust_combine<T: Float>(
     // the documented order: weight shape, then ClippedMean parameters. ---
     if let Some(weight_view) = weight {
         let weight_shape = weight_view.shape();
-        if weight_shape[0] != sample_count
-            || weight_shape[1] != height
-            || weight_shape[2] != width
+        if weight_shape[0] != sample_count || weight_shape[1] != height || weight_shape[2] != width
         {
             return Err(RobustError::WeightShapeMismatch {
                 weight: (weight_shape[0], weight_shape[1], weight_shape[2]),
@@ -392,7 +390,11 @@ fn combine_clipped_mean(
         // sample; same sentinel as the all-invalid case.
         return (f64::NAN, 0.0, 0);
     }
-    (weighted_value_sum / weight_sum, weight_sum, survivor_count as u32)
+    (
+        weighted_value_sum / weight_sum,
+        weight_sum,
+        survivor_count as u32,
+    )
 }
 
 /// Median of a non-empty slice of finite values. Sorts in place (the
@@ -478,7 +480,7 @@ mod tests {
         (values, weights)
     }
 
-    fn naive_median(values: &mut Vec<f64>) -> f64 {
+    fn naive_median(values: &mut [f64]) -> f64 {
         values.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let length = values.len();
         if length % 2 == 1 {
@@ -591,16 +593,14 @@ mod tests {
         tol: f64,
     ) {
         let (want_combined, want_weight, want_count) = want;
-        for ((g, w), _) in got
-            .combined
-            .iter()
-            .zip(want_combined.iter())
-            .zip(0..)
-        {
+        for ((g, w), _) in got.combined.iter().zip(want_combined.iter()).zip(0..) {
             if w.is_nan() {
                 assert!(g.is_nan(), "expected NaN sentinel, got {g}");
             } else {
-                assert!((g - w).abs() <= tol * w.abs().max(1.0), "combined {g} != {w}");
+                assert!(
+                    (g - w).abs() <= tol * w.abs().max(1.0),
+                    "combined {g} != {w}"
+                );
             }
         }
         for (g, w) in got.weight.iter().zip(want_weight.iter()) {
@@ -634,14 +634,8 @@ mod tests {
         let stack = random_stack(&mut rng, 11, 5, 4);
         // Weights in [-0.5, 2): negatives/zeros exercise the inclusion
         // gate (excluded), positives are kept.
-        let weight =
-            Array3::from_shape_fn((11, 5, 4), |_| rng.range(-0.5, 2.0));
-        let got = robust_combine(
-            stack.view(),
-            Some(weight.view()),
-            CombineMethod::Median,
-        )
-        .unwrap();
+        let weight = Array3::from_shape_fn((11, 5, 4), |_| rng.range(-0.5, 2.0));
+        let got = robust_combine(stack.view(), Some(weight.view()), CombineMethod::Median).unwrap();
         let want = naive_median_combine(&stack, Some(&weight));
         assert_planes_close(&got, &want, 1e-12);
     }
@@ -668,12 +662,7 @@ mod tests {
             kappa: 3.0,
             max_iter: 8,
         };
-        let got = robust_combine(
-            stack.view(),
-            Some(weight.view()),
-            method,
-        )
-        .unwrap();
+        let got = robust_combine(stack.view(), Some(weight.view()), method).unwrap();
         let want = naive_clipped_mean_combine(&stack, Some(&weight), 3.0, 8);
         assert_planes_close(&got, &want, 1e-9);
     }
@@ -686,12 +675,7 @@ mod tests {
         // excluded from BOTH the median and the count/weight.
         let stack = Array3::from_shape_vec((3, 1, 1), vec![1.0, 999.0, 3.0]).unwrap();
         let weight = Array3::from_shape_vec((3, 1, 1), vec![2.0, 0.0, 4.0]).unwrap();
-        let got = robust_combine(
-            stack.view(),
-            Some(weight.view()),
-            CombineMethod::Median,
-        )
-        .unwrap();
+        let got = robust_combine(stack.view(), Some(weight.view()), CombineMethod::Median).unwrap();
         // Only {1.0, 3.0} survive the gate -> median 2.0, count 2,
         // weight 2 + 4 = 6. The 999.0 weight-0 sample is gone.
         assert!((got.combined[(0, 0)] - 2.0).abs() < 1e-12);
@@ -702,13 +686,8 @@ mod tests {
     #[test]
     fn all_invalid_pixel_is_nan_weight0_count0() {
         // Pixel (0,0): all NaN values. Pixel (0,1): all weight 0.
-        let stack = Array3::from_shape_vec(
-            (2, 1, 2),
-            vec![f64::NAN, 5.0, f64::NAN, 7.0],
-        )
-        .unwrap();
-        let weight =
-            Array3::from_shape_vec((2, 1, 2), vec![1.0, 0.0, 1.0, 0.0]).unwrap();
+        let stack = Array3::from_shape_vec((2, 1, 2), vec![f64::NAN, 5.0, f64::NAN, 7.0]).unwrap();
+        let weight = Array3::from_shape_vec((2, 1, 2), vec![1.0, 0.0, 1.0, 0.0]).unwrap();
         for method in [
             CombineMethod::Median,
             CombineMethod::ClippedMean {
@@ -716,12 +695,7 @@ mod tests {
                 max_iter: 5,
             },
         ] {
-            let got = robust_combine(
-                stack.view(),
-                Some(weight.view()),
-                method,
-            )
-            .unwrap();
+            let got = robust_combine(stack.view(), Some(weight.view()), method).unwrap();
             for column in 0..2 {
                 assert!(
                     got.combined[(0, column)].is_nan(),
@@ -803,8 +777,7 @@ mod tests {
                     ws += weight[(n, row, column)];
                 }
                 assert!(
-                    (got.combined[(row, column)] - wv / ws).abs()
-                        < 1e-9 * (wv / ws).abs().max(1.0),
+                    (got.combined[(row, column)] - wv / ws).abs() < 1e-9 * (wv / ws).abs().max(1.0),
                     "expected plain weighted mean"
                 );
                 assert_eq!(got.count[(row, column)], 7);
@@ -817,8 +790,7 @@ mod tests {
     fn single_stamp_passes_through() {
         // N = 1: every pixel has exactly one sample, which must pass
         // through unchanged for both methods.
-        let stack = Array3::from_shape_vec((1, 2, 2), vec![3.0, -7.0, 0.5, 11.0])
-            .unwrap();
+        let stack = Array3::from_shape_vec((1, 2, 2), vec![3.0, -7.0, 0.5, 11.0]).unwrap();
         for method in [
             CombineMethod::Median,
             CombineMethod::ClippedMean {
@@ -879,22 +851,15 @@ mod tests {
     fn count_and_weight_semantics() {
         // Equal weight -> reported weight == count (as f64). Weighted ->
         // reported weight == sum of survivor weights.
-        let stack = Array3::from_shape_vec((4, 1, 1), vec![1.0, 2.0, 3.0, 4.0])
-            .unwrap();
+        let stack = Array3::from_shape_vec((4, 1, 1), vec![1.0, 2.0, 3.0, 4.0]).unwrap();
 
-        let equal =
-            robust_combine(stack.view(), None, CombineMethod::Median).unwrap();
+        let equal = robust_combine(stack.view(), None, CombineMethod::Median).unwrap();
         assert_eq!(equal.count[(0, 0)], 4);
         assert!((equal.weight[(0, 0)] - 4.0).abs() < 1e-12);
 
-        let weight =
-            Array3::from_shape_vec((4, 1, 1), vec![0.5, 1.5, 2.0, 1.0]).unwrap();
-        let weighted = robust_combine(
-            stack.view(),
-            Some(weight.view()),
-            CombineMethod::Median,
-        )
-        .unwrap();
+        let weight = Array3::from_shape_vec((4, 1, 1), vec![0.5, 1.5, 2.0, 1.0]).unwrap();
+        let weighted =
+            robust_combine(stack.view(), Some(weight.view()), CombineMethod::Median).unwrap();
         assert_eq!(weighted.count[(0, 0)], 4);
         assert!((weighted.weight[(0, 0)] - 5.0).abs() < 1e-12);
     }
@@ -924,10 +889,8 @@ mod tests {
         assert_eq!(from_f64.count, from_f32.count);
 
         // Median path too.
-        let mf64 = robust_combine(stack_f64.view(), None, CombineMethod::Median)
-            .unwrap();
-        let mf32 = robust_combine(stack_f32.view(), None, CombineMethod::Median)
-            .unwrap();
+        let mf64 = robust_combine(stack_f64.view(), None, CombineMethod::Median).unwrap();
+        let mf32 = robust_combine(stack_f32.view(), None, CombineMethod::Median).unwrap();
         for (a, b) in mf64.combined.iter().zip(mf32.combined.iter()) {
             assert!((a - b).abs() < 1e-4 * a.abs().max(1.0), "{a} vs {b}");
         }
@@ -939,12 +902,8 @@ mod tests {
     fn error_weight_shape_mismatch() {
         let stack = Array3::<f64>::zeros((3, 4, 5));
         let weight = Array3::<f64>::zeros((3, 4, 6));
-        let err = robust_combine(
-            stack.view(),
-            Some(weight.view()),
-            CombineMethod::Median,
-        )
-        .unwrap_err();
+        let err =
+            robust_combine(stack.view(), Some(weight.view()), CombineMethod::Median).unwrap_err();
         assert_eq!(
             err,
             RobustError::WeightShapeMismatch {

@@ -132,9 +132,7 @@ use thiserror::Error;
 
 use crate::float::Float;
 
-use super::kernel::{
-    catmull_rom_sample, catmull_rom_weight_derivatives, catmull_rom_weights,
-};
+use super::kernel::{catmull_rom_sample, catmull_rom_weight_derivatives, catmull_rom_weights};
 
 /// Minimum valid-pixel count for a star to be solvable (more than the
 /// two `(flux, background)` parameters).
@@ -170,13 +168,9 @@ pub enum NuisanceError {
     EpsfNotSquare { rows: usize, cols: usize },
     #[error("oversample must be odd; got {oversample}")]
     OversampleNotOdd { oversample: usize },
-    #[error(
-        "epsf side ({epsf_side}) must be an integer multiple of oversample ({oversample})"
-    )]
+    #[error("epsf side ({epsf_side}) must be an integer multiple of oversample ({oversample})")]
     EpsfSizeNotMultiple { epsf_side: usize, oversample: usize },
-    #[error(
-        "derived stamp_size (epsf_side / oversample) must be odd; got {stamp_size}"
-    )]
+    #[error("derived stamp_size (epsf_side / oversample) must be odd; got {stamp_size}")]
     DerivedStampSizeEven { stamp_size: usize },
     #[error(
         "batch dimensions disagree: data shape {data:?} must be (N, s, s) with s the derived stamp size and delta shape {delta:?} must be (N, 2)"
@@ -263,19 +257,19 @@ fn validate_shared<T: Float>(
             cols: epsf_cols,
         });
     }
-    if oversample % 2 == 0 {
+    if oversample.is_multiple_of(2) {
         // Also rejects oversample == 0 (0 is even, hence not odd).
         return Err(NuisanceError::OversampleNotOdd { oversample });
     }
     let epsf_side = epsf_rows;
-    if epsf_side % oversample != 0 {
+    if !epsf_side.is_multiple_of(oversample) {
         return Err(NuisanceError::EpsfSizeNotMultiple {
             epsf_side,
             oversample,
         });
     }
     let stamp_size = epsf_side / oversample;
-    if stamp_size % 2 == 0 {
+    if stamp_size.is_multiple_of(2) {
         // Catches the degenerate empty model (stamp_size == 0) too.
         return Err(NuisanceError::DerivedStampSizeEven { stamp_size });
     }
@@ -367,13 +361,7 @@ fn gather_valid_pixels<T: Float>(
 /// Returns `None` (singular) when a diagonal entry is non-positive or
 /// `det <= SINGULAR_RELATIVE_EPS * a11 * a22`, or when the solution is
 /// not finite. Used by both the `(f, b)` solve and the GN-delta solve.
-fn solve_symmetric_2x2(
-    a11: f64,
-    a12: f64,
-    a22: f64,
-    r1: f64,
-    r2: f64,
-) -> Option<(f64, f64)> {
+fn solve_symmetric_2x2(a11: f64, a12: f64, a22: f64, r1: f64, r2: f64) -> Option<(f64, f64)> {
     // Reject a non-positive or non-finite diagonal (a constant model
     // gives a zero/near-zero diagonal). Plain comparisons plus an
     // explicit finiteness check stay NaN/inf-safe without a negated
@@ -431,21 +419,20 @@ fn sample_value_and_delta_jacobian(
     let mut value = 0.0_f64;
     let mut dvalue_dku = 0.0_f64;
     let mut dvalue_dkv = 0.0_f64;
-    for tap_u in 0..4 {
+    for (tap_u, &weight_u) in weights_u.iter().enumerate() {
         let model_row = base_u + tap_u as i64;
         if model_row < 0 || model_row >= side {
             continue; // zero-pad outside the model grid
         }
-        let weight_u = weights_u[tap_u];
         let dweight_u = dweights_u[tap_u];
-        for tap_v in 0..4 {
+        for (tap_v, &weight_v) in weights_v.iter().enumerate() {
             let model_column = base_v + tap_v as i64;
             if model_column < 0 || model_column >= side {
                 continue; // zero-pad outside the model grid
             }
             let psi = epsf[(model_row as usize, model_column as usize)];
-            value += psi * weight_u * weights_v[tap_v];
-            dvalue_dku += psi * dweight_u * weights_v[tap_v];
+            value += psi * weight_u * weight_v;
+            dvalue_dku += psi * dweight_u * weight_v;
             dvalue_dkv += psi * weight_u * dweights_v[tap_v];
         }
     }
@@ -601,16 +588,11 @@ fn refine_one_star<T: Float>(
     // `max_iter >= 1` and `tol` finite-and-positive are guaranteed by
     // the RefineParamsInvalid precondition.
     for iteration in 0..max_iter {
-        let (flux, background) = match solve_flux_background_one_star(
-            epsf,
-            &valid,
-            delta_row,
-            delta_column,
-            geometry,
-        ) {
-            Some(value) => value,
-            None => return failure,
-        };
+        let (flux, background) =
+            match solve_flux_background_one_star(epsf, &valid, delta_row, delta_column, geometry) {
+                Some(value) => value,
+                None => return failure,
+            };
         let (step_row_raw, step_column_raw) = match gauss_newton_delta_step(
             epsf,
             &valid,
@@ -654,11 +636,8 @@ fn refine_one_star<T: Float>(
 
     // Re-solve (f,b) once at the final delta so the returned triple is
     // mutually consistent.
-    match solve_flux_background_one_star(epsf, &valid, delta_row, delta_column, geometry)
-    {
-        Some((flux, background)) => {
-            (flux, background, delta_row, delta_column, true, converged)
-        }
+    match solve_flux_background_one_star(epsf, &valid, delta_row, delta_column, geometry) {
+        Some((flux, background)) => (flux, background, delta_row, delta_column, true, converged),
         None => failure,
     }
 }
@@ -711,10 +690,8 @@ pub fn solve_flux_background<T: Float>(
         .into_par_iter()
         .map(|star_index| {
             let data_stamp = data.index_axis(Axis(0), star_index);
-            let weight_stamp =
-                weight.as_ref().map(|w| w.index_axis(Axis(0), star_index));
-            let valid =
-                gather_valid_pixels(&data_stamp, &weight_stamp, geometry.stamp_size);
+            let weight_stamp = weight.as_ref().map(|w| w.index_axis(Axis(0), star_index));
+            let valid = gather_valid_pixels(&data_stamp, &weight_stamp, geometry.stamp_size);
             match solve_flux_background_one_star(
                 &epsf,
                 &valid,
@@ -800,8 +777,7 @@ pub fn refine_nuisance<T: Float>(
         .into_par_iter()
         .map(|star_index| {
             let data_stamp = data.index_axis(Axis(0), star_index);
-            let weight_stamp =
-                weight.as_ref().map(|w| w.index_axis(Axis(0), star_index));
+            let weight_stamp = weight.as_ref().map(|w| w.index_axis(Axis(0), star_index));
             refine_one_star(
                 &epsf,
                 &data_stamp,
@@ -820,9 +796,7 @@ pub fn refine_nuisance<T: Float>(
     let mut delta_flat = Vec::with_capacity(geometry.batch_size * 2);
     let mut ok = Vec::with_capacity(geometry.batch_size);
     let mut converged = Vec::with_capacity(geometry.batch_size);
-    for (star_flux, star_background, delta_row, delta_column, star_ok, star_converged) in
-        per_star
-    {
+    for (star_flux, star_background, delta_row, delta_column, star_ok, star_converged) in per_star {
         flux.push(star_flux);
         background.push(star_background);
         delta_flat.push(delta_row);
@@ -886,8 +860,8 @@ mod tests {
             for q in 0..epsf_side {
                 let dp = p as f64 - center;
                 let dq = q as f64 - center;
-                model[(p, q)] = amplitude
-                    * (-0.5 * (dp * dp + dq * dq) / (sigma_model * sigma_model)).exp();
+                model[(p, q)] =
+                    amplitude * (-0.5 * (dp * dp + dq * dq) / (sigma_model * sigma_model)).exp();
             }
         }
         model
@@ -944,8 +918,7 @@ mod tests {
                     None => 1.0,
                 };
                 let k_u = psf_center + os * ((i as f64 - detector_center) - delta_row);
-                let k_v =
-                    psf_center + os * ((j as f64 - detector_center) - delta_column);
+                let k_v = psf_center + os * ((j as f64 - detector_center) - delta_column);
                 let g = catmull_rom_sample(&epsf.view(), k_u, k_v);
                 s_gg += w * g * g;
                 s_g += w * g;
@@ -959,7 +932,10 @@ mod tests {
             return None;
         }
         let det = s_gg * s_1 - s_g * s_g;
-        if !(s_gg > 0.0) || !(s_1 > 0.0) || !(det > 1e-12 * s_gg * s_1) {
+        if s_gg.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater)
+            || s_1.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater)
+            || det.partial_cmp(&(1e-12 * s_gg * s_1)) != Some(std::cmp::Ordering::Greater)
+        {
             return None;
         }
         Some((
@@ -1018,9 +994,8 @@ mod tests {
             );
             data.index_axis_mut(Axis(0), n).assign(&stamp);
         }
-        let got =
-            solve_flux_background(epsf.view(), oversample, data.view(), None, delta.view())
-                .unwrap();
+        let got = solve_flux_background(epsf.view(), oversample, data.view(), None, delta.view())
+            .unwrap();
         for n in 0..3 {
             let (f_naive, b_naive) = naive_solve_flux_background(
                 &epsf,
@@ -1054,9 +1029,7 @@ mod tests {
         let delta = arr2(&[[0.22, -0.17]]);
         let data = stack_one(&synth_stamp(&epsf, oversample, 0.22, -0.17, 2.5, 1.5));
         let mut rng = SplitMix64::new(0x0BAD_F00D_9876_5432);
-        let weight = Array3::from_shape_fn((1, stamp_size, stamp_size), |_| {
-            rng.range(0.1, 3.0)
-        });
+        let weight = Array3::from_shape_fn((1, stamp_size, stamp_size), |_| rng.range(0.1, 3.0));
         let got = solve_flux_background(
             epsf.view(),
             oversample,
@@ -1090,14 +1063,8 @@ mod tests {
         let epsf = gaussian_epsf(epsf_side, oversample as f64 * 1.3, 50.0);
         let delta = arr2(&[[0.1, 0.2]]);
         let data = stack_one(&synth_stamp(&epsf, oversample, 0.1, 0.2, 3.0, 0.5));
-        let none = solve_flux_background(
-            epsf.view(),
-            oversample,
-            data.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap();
+        let none = solve_flux_background(epsf.view(), oversample, data.view(), None, delta.view())
+            .unwrap();
         let unit = Array3::<f64>::ones((1, stamp_size, stamp_size));
         let some = solve_flux_background(
             epsf.view(),
@@ -1192,7 +1159,10 @@ mod tests {
         )
         .unwrap();
         assert!(result.ok[0]);
-        assert!(!result.converged[0], "max_iter = 1 must report converged = false");
+        assert!(
+            !result.converged[0],
+            "max_iter = 1 must report converged = false"
+        );
 
         // Manual one round using the production helpers directly.
         let geometry = StampGeometry {
@@ -1227,14 +1197,9 @@ mod tests {
         let sc = sc_raw.clamp(-MAX_DELTA_STEP, MAX_DELTA_STEP);
         let d1_row = delta_init_row + sr;
         let d1_column = delta_init_column + sc;
-        let (f1, b1) = solve_flux_background_one_star(
-            &epsf.view(),
-            &valid,
-            d1_row,
-            d1_column,
-            &geometry,
-        )
-        .unwrap();
+        let (f1, b1) =
+            solve_flux_background_one_star(&epsf.view(), &valid, d1_row, d1_column, &geometry)
+                .unwrap();
         assert!((result.delta[(0, 0)] - d1_row).abs() < 1e-12);
         assert!((result.delta[(0, 1)] - d1_column).abs() < 1e-12);
         assert!((result.flux[0] - f1).abs() < 1e-12);
@@ -1249,8 +1214,7 @@ mod tests {
         // kernel sample tap-for-tap (it is the exact same gather).
         let epsf = ramp_epsf(25);
         for &(k_u, k_v) in &[(11.3, 12.7), (5.0, 18.2), (0.4, 23.9), (12.0, 12.0)] {
-            let (value, _, _) =
-                sample_value_and_delta_jacobian(&epsf.view(), k_u, k_v, 5.0);
+            let (value, _, _) = sample_value_and_delta_jacobian(&epsf.view(), k_u, k_v, 5.0);
             let reference = catmull_rom_sample(&epsf.view(), k_u, k_v);
             assert!(
                 (value - reference).abs() < 1e-15,
@@ -1295,8 +1259,7 @@ mod tests {
         // recovers it. A flipped GN-delta sign would diverge / leave
         // the basin (decision 4 / 12 sign convention).
         use crate::image::stamp::{
-            DEFAULT_CENTROID_MAX_ITER, DEFAULT_CENTROID_TOL, DEFAULT_WEIGHT_FWHM,
-            build_stamp,
+            DEFAULT_CENTROID_MAX_ITER, DEFAULT_CENTROID_TOL, DEFAULT_WEIGHT_FWHM, build_stamp,
         };
         let true_row = 7.35_f64;
         let true_col = 6.80_f64;
@@ -1340,10 +1303,7 @@ mod tests {
         ));
         // Start a touch off the build_stamp delta; a sign flip would
         // push refinement away rather than back to it.
-        let delta_init = arr2(&[[
-            stamp_result.delta.0 + 0.05,
-            stamp_result.delta.1 - 0.05,
-        ]]);
+        let delta_init = arr2(&[[stamp_result.delta.0 + 0.05, stamp_result.delta.1 - 0.05]]);
         let result = refine_nuisance(
             epsf.view(),
             oversample,
@@ -1382,14 +1342,8 @@ mod tests {
         // All-NaN data -> zero valid pixels.
         let data = Array3::<f64>::from_elem((1, stamp_size, stamp_size), f64::NAN);
         let delta = arr2(&[[0.1, 0.1]]);
-        let leaf = solve_flux_background(
-            epsf.view(),
-            oversample,
-            data.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap();
+        let leaf = solve_flux_background(epsf.view(), oversample, data.view(), None, delta.view())
+            .unwrap();
         assert!(!leaf.ok[0]);
         assert!(leaf.flux[0].is_nan());
         assert!(leaf.background[0].is_nan());
@@ -1423,14 +1377,8 @@ mod tests {
         let epsf = Array2::<f64>::from_elem((epsf_side, epsf_side), 1.0);
         let data = Array3::<f64>::from_elem((1, stamp_size, stamp_size), 4.0);
         let delta = arr2(&[[0.05, -0.05]]);
-        let leaf = solve_flux_background(
-            epsf.view(),
-            oversample,
-            data.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap();
+        let leaf = solve_flux_background(epsf.view(), oversample, data.view(), None, delta.view())
+            .unwrap();
         assert!(!leaf.ok[0]);
         assert!(leaf.flux[0].is_nan());
 
@@ -1460,14 +1408,8 @@ mod tests {
         let epsf = gaussian_epsf(epsf_side, oversample as f64 * 1.0, 40.0);
         let data = stack_one(&synth_stamp(&epsf, oversample, 0.1, -0.1, 1.5, 0.3));
         let delta = arr2(&[[0.1, -0.1]]);
-        let got = solve_flux_background(
-            epsf.view(),
-            oversample,
-            data.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap();
+        let got = solve_flux_background(epsf.view(), oversample, data.view(), None, delta.view())
+            .unwrap();
         assert_eq!(got.flux.len(), 1);
         assert!(got.ok[0]);
         assert!((got.flux[0] - 1.5).abs() < 1e-6);
@@ -1480,14 +1422,8 @@ mod tests {
         let epsf = Array2::<f64>::zeros((35, 35));
         let data = Array3::<f64>::zeros((0, 7, 7));
         let delta = Array2::<f64>::zeros((0, 2));
-        let leaf = solve_flux_background(
-            epsf.view(),
-            oversample,
-            data.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap();
+        let leaf = solve_flux_background(epsf.view(), oversample, data.view(), None, delta.view())
+            .unwrap();
         assert_eq!(leaf.flux.len(), 0);
         assert_eq!(leaf.ok.len(), 0);
         let refined = refine_nuisance(
@@ -1516,26 +1452,15 @@ mod tests {
         let data_f32: Array3<f32> = data_f64.mapv(|v| v as f32);
         let delta = arr2(&[[0.18, -0.12]]);
 
-        let from_f64 = solve_flux_background(
-            epsf.view(),
-            oversample,
-            data_f64.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap();
-        let from_f32 = solve_flux_background(
-            epsf.view(),
-            oversample,
-            data_f32.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap();
+        let from_f64 =
+            solve_flux_background(epsf.view(), oversample, data_f64.view(), None, delta.view())
+                .unwrap();
+        let from_f32 =
+            solve_flux_background(epsf.view(), oversample, data_f32.view(), None, delta.view())
+                .unwrap();
         assert_eq!(from_f64.ok, from_f32.ok);
         assert!(
-            (from_f64.flux[0] - from_f32.flux[0]).abs()
-                < 1e-3 * from_f64.flux[0].abs().max(1.0)
+            (from_f64.flux[0] - from_f32.flux[0]).abs() < 1e-3 * from_f64.flux[0].abs().max(1.0)
         );
         assert!(
             (from_f64.background[0] - from_f32.background[0]).abs()
@@ -1563,14 +1488,8 @@ mod tests {
         let epsf = Array2::<f64>::zeros((10, 12));
         let data = Array3::<f64>::zeros((1, 7, 7));
         let delta = arr2(&[[0.0, 0.0]]);
-        let err = solve_flux_background(
-            epsf.view(),
-            5,
-            data.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap_err();
+        let err =
+            solve_flux_background(epsf.view(), 5, data.view(), None, delta.view()).unwrap_err();
         assert_eq!(err, NuisanceError::EpsfNotSquare { rows: 10, cols: 12 });
     }
 
@@ -1579,16 +1498,8 @@ mod tests {
         let epsf = Array2::<f64>::zeros((20, 20));
         let data = Array3::<f64>::zeros((1, 5, 5));
         let delta = arr2(&[[0.0, 0.0]]);
-        let err = refine_nuisance(
-            epsf.view(),
-            4,
-            data.view(),
-            None,
-            delta.view(),
-            5,
-            1e-8,
-        )
-        .unwrap_err();
+        let err =
+            refine_nuisance(epsf.view(), 4, data.view(), None, delta.view(), 5, 1e-8).unwrap_err();
         assert_eq!(err, NuisanceError::OversampleNotOdd { oversample: 4 });
     }
 
@@ -1597,14 +1508,8 @@ mod tests {
         let epsf = Array2::<f64>::zeros((34, 34));
         let data = Array3::<f64>::zeros((1, 7, 7));
         let delta = arr2(&[[0.0, 0.0]]);
-        let err = solve_flux_background(
-            epsf.view(),
-            5,
-            data.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap_err();
+        let err =
+            solve_flux_background(epsf.view(), 5, data.view(), None, delta.view()).unwrap_err();
         assert_eq!(
             err,
             NuisanceError::EpsfSizeNotMultiple {
@@ -1620,14 +1525,8 @@ mod tests {
         let epsf = Array2::<f64>::zeros((18, 18));
         let data = Array3::<f64>::zeros((1, 6, 6));
         let delta = arr2(&[[0.0, 0.0]]);
-        let err = solve_flux_background(
-            epsf.view(),
-            3,
-            data.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap_err();
+        let err =
+            solve_flux_background(epsf.view(), 3, data.view(), None, delta.view()).unwrap_err();
         assert_eq!(err, NuisanceError::DerivedStampSizeEven { stamp_size: 6 });
     }
 
@@ -1637,14 +1536,8 @@ mod tests {
         let epsf = Array2::<f64>::zeros((35, 35));
         let data = Array3::<f64>::zeros((2, 5, 5));
         let delta = arr2(&[[0.0, 0.0], [0.1, 0.1]]);
-        let err = solve_flux_background(
-            epsf.view(),
-            5,
-            data.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap_err();
+        let err =
+            solve_flux_background(epsf.view(), 5, data.view(), None, delta.view()).unwrap_err();
         assert_eq!(
             err,
             NuisanceError::BatchLengthMismatch {
@@ -1660,14 +1553,8 @@ mod tests {
         let epsf = Array2::<f64>::zeros((35, 35));
         let data = Array3::<f64>::zeros((2, 7, 7));
         let delta = arr2(&[[0.0, 0.0, 0.0], [0.1, 0.1, 0.1]]);
-        let err = solve_flux_background(
-            epsf.view(),
-            5,
-            data.view(),
-            None,
-            delta.view(),
-        )
-        .unwrap_err();
+        let err =
+            solve_flux_background(epsf.view(), 5, data.view(), None, delta.view()).unwrap_err();
         assert_eq!(
             err,
             NuisanceError::BatchLengthMismatch {
@@ -1706,16 +1593,8 @@ mod tests {
         let data = Array3::<f64>::zeros((1, 7, 7));
         let delta = arr2(&[[0.0, 0.0]]);
         // max_iter == 0.
-        let err = refine_nuisance(
-            epsf.view(),
-            5,
-            data.view(),
-            None,
-            delta.view(),
-            0,
-            1e-8,
-        )
-        .unwrap_err();
+        let err =
+            refine_nuisance(epsf.view(), 5, data.view(), None, delta.view(), 0, 1e-8).unwrap_err();
         assert_eq!(
             err,
             NuisanceError::RefineParamsInvalid {
@@ -1725,16 +1604,8 @@ mod tests {
         );
         // Bad tol values.
         for bad_tol in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-            let err = refine_nuisance(
-                epsf.view(),
-                5,
-                data.view(),
-                None,
-                delta.view(),
-                5,
-                bad_tol,
-            )
-            .unwrap_err();
+            let err = refine_nuisance(epsf.view(), 5, data.view(), None, delta.view(), 5, bad_tol)
+                .unwrap_err();
             match err {
                 NuisanceError::RefineParamsInvalid { max_iter, tol } => {
                     assert_eq!(max_iter, 5);
@@ -1745,13 +1616,7 @@ mod tests {
         }
         // solve_flux_background has no max_iter/tol, so the same shapes
         // succeed there (it is exempt from RefineParamsInvalid).
-        let ok = solve_flux_background(
-            epsf.view(),
-            5,
-            data.view(),
-            None,
-            delta.view(),
-        );
+        let ok = solve_flux_background(epsf.view(), 5, data.view(), None, delta.view());
         assert!(ok.is_ok());
     }
 
@@ -1762,16 +1627,8 @@ mod tests {
         let epsf = Array2::<f64>::zeros((10, 12)); // not square
         let data = Array3::<f64>::zeros((1, 7, 7));
         let delta = arr2(&[[0.0, 0.0]]);
-        let err = refine_nuisance(
-            epsf.view(),
-            5,
-            data.view(),
-            None,
-            delta.view(),
-            0,
-            -1.0,
-        )
-        .unwrap_err();
+        let err =
+            refine_nuisance(epsf.view(), 5, data.view(), None, delta.view(), 0, -1.0).unwrap_err();
         assert_eq!(err, NuisanceError::EpsfNotSquare { rows: 10, cols: 12 });
     }
 }

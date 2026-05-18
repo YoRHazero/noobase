@@ -142,12 +142,17 @@ fn synthetic_impl<'py, T: Scalar + GridChannel>(
     transmission_values: &Bound<'py, PyAny>,
     convention: PhotometryConvention,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let transmission = typed_channel::<T>(transmission_values, "transmission_values", "spectrum_flux")?;
+    let transmission =
+        typed_channel::<T>(transmission_values, "transmission_values", "spectrum_flux")?;
     let error = optional_typed_channel::<T>(spectrum_error, "spectrum_error", "spectrum_flux")?;
 
     let spectrum_grid_py = coerce_to_grid(spectrum_grid, flux.len(), T::IS_F32, "spectrum")?;
-    let transmission_grid_py =
-        coerce_to_grid(transmission_grid, transmission.len(), T::IS_F32, "transmission")?;
+    let transmission_grid_py = coerce_to_grid(
+        transmission_grid,
+        transmission.len(),
+        T::IS_F32,
+        "transmission",
+    )?;
     let spectrum_core =
         grid_channel::<T>(spectrum_grid_py, "spectrum").expect("coerce_to_grid enforces dtype");
     let transmission_core = grid_channel::<T>(transmission_grid_py, "transmission")
@@ -365,8 +370,12 @@ where
 {
     let transmission =
         required_typed_array1::<T>(transmission_values, "spectrum_grid vs transmission_values")?;
-    let transmission_grid_py =
-        coerce_to_grid(transmission_grid, transmission.len(), T::IS_F32, "transmission")?;
+    let transmission_grid_py = coerce_to_grid(
+        transmission_grid,
+        transmission.len(),
+        T::IS_F32,
+        "transmission",
+    )?;
     let transmission_core = grid_channel::<T>(transmission_grid_py, "transmission")
         .expect("coerce_to_grid enforces dtype");
     let operator = core_photometry::SyntheticOperator::<T>::new(

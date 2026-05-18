@@ -214,27 +214,21 @@ mod tests {
     #[test]
     fn clip_subject_completely_inside_cell_returns_subject() {
         // Subject quad entirely inside cell [0, 1] x [0, 1].
-        let quad: [Point; 4] = [
-            [0.1, 0.1],
-            [0.7, 0.2],
-            [0.8, 0.9],
-            [0.2, 0.8],
-        ];
+        let quad: [Point; 4] = [[0.1, 0.1], [0.7, 0.2], [0.8, 0.9], [0.2, 0.8]];
         let clipped = clip_quad_against_unit_cell(&quad, (0, 0));
         // Sutherland-Hodgman preserves vertices wholly inside; expect 4.
         assert_eq!(clipped.len(), 4);
-        assert!(approx_eq(signed_area(&clipped).abs(), signed_area(&quad).abs(), TOL));
+        assert!(approx_eq(
+            signed_area(&clipped).abs(),
+            signed_area(&quad).abs(),
+            TOL
+        ));
     }
 
     #[test]
     fn clip_subject_completely_disjoint_returns_empty() {
         // Subject entirely to the right of cell [0, 1] x [0, 1].
-        let quad: [Point; 4] = [
-            [2.0, 2.0],
-            [3.0, 2.0],
-            [3.0, 3.0],
-            [2.0, 3.0],
-        ];
+        let quad: [Point; 4] = [[2.0, 2.0], [3.0, 2.0], [3.0, 3.0], [2.0, 3.0]];
         let clipped = clip_quad_against_unit_cell(&quad, (0, 0));
         assert!(clipped.is_empty());
         assert!(approx_eq(signed_area(&clipped).abs(), 0.0, TOL));
@@ -244,12 +238,7 @@ mod tests {
     fn clip_axis_aligned_partial_overlap() {
         // Subject [0.5, 1.5] x [0.5, 1.5] overlaps cell [0, 1] x [0, 1]
         // in the quarter [0.5, 1.0] x [0.5, 1.0] (area 0.25).
-        let quad: [Point; 4] = [
-            [0.5, 0.5],
-            [1.5, 0.5],
-            [1.5, 1.5],
-            [0.5, 1.5],
-        ];
+        let quad: [Point; 4] = [[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
         let clipped = clip_quad_against_unit_cell(&quad, (0, 0));
         let area = signed_area(&clipped).abs();
         assert!(approx_eq(area, 0.25, TOL));
@@ -258,12 +247,7 @@ mod tests {
     #[test]
     fn clip_cell_entirely_inside_subject_returns_cell() {
         // Subject covers a much larger region; cell is fully inside.
-        let quad: [Point; 4] = [
-            [-5.0, -5.0],
-            [5.0, -5.0],
-            [5.0, 5.0],
-            [-5.0, 5.0],
-        ];
+        let quad: [Point; 4] = [[-5.0, -5.0], [5.0, -5.0], [5.0, 5.0], [-5.0, 5.0]];
         let clipped = clip_quad_against_unit_cell(&quad, (0, 0));
         let area = signed_area(&clipped).abs();
         assert!(approx_eq(area, 1.0, TOL));
@@ -273,12 +257,7 @@ mod tests {
     fn clip_one_corner_inside() {
         // Subject [-0.5, 0.5] x [-0.5, 0.5] overlaps cell [0,1] x [0,1]
         // only in the small square [0, 0.5] x [0, 0.5] (area 0.25).
-        let quad: [Point; 4] = [
-            [-0.5, -0.5],
-            [0.5, -0.5],
-            [0.5, 0.5],
-            [-0.5, 0.5],
-        ];
+        let quad: [Point; 4] = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
         let clipped = clip_quad_against_unit_cell(&quad, (0, 0));
         let area = signed_area(&clipped).abs();
         assert!(approx_eq(area, 0.25, TOL));
@@ -290,12 +269,7 @@ mod tests {
         // with half-diagonal 0.5 -> vertices on the cell midpoints.
         // The intersection is exactly the rotated square itself, with
         // area 0.5.
-        let quad: [Point; 4] = [
-            [0.5, 0.0],
-            [1.0, 0.5],
-            [0.5, 1.0],
-            [0.0, 0.5],
-        ];
+        let quad: [Point; 4] = [[0.5, 0.0], [1.0, 0.5], [0.5, 1.0], [0.0, 0.5]];
         let clipped = clip_quad_against_unit_cell(&quad, (0, 0));
         let area = signed_area(&clipped).abs();
         assert!(approx_eq(area, 0.5, TOL));
@@ -304,12 +278,7 @@ mod tests {
     #[test]
     fn clip_degenerate_quad_has_zero_area() {
         // Collinear "quad" along y = 0 -> zero area.
-        let quad: [Point; 4] = [
-            [0.0, 0.0],
-            [0.4, 0.0],
-            [0.8, 0.0],
-            [0.2, 0.0],
-        ];
+        let quad: [Point; 4] = [[0.0, 0.0], [0.4, 0.0], [0.8, 0.0], [0.2, 0.0]];
         let clipped = clip_quad_against_unit_cell(&quad, (0, 0));
         let area = signed_area(&clipped).abs();
         assert!(approx_eq(area, 0.0, TOL));
@@ -320,12 +289,7 @@ mod tests {
         // Same axis-aligned subject, but clipping against cell at
         // (3, 5) -> [3, 4] x [5, 6]. Subject [3.5, 4.5] x [5.5, 6.5]
         // overlaps in [3.5, 4.0] x [5.5, 6.0] (area 0.25).
-        let quad: [Point; 4] = [
-            [3.5, 5.5],
-            [4.5, 5.5],
-            [4.5, 6.5],
-            [3.5, 6.5],
-        ];
+        let quad: [Point; 4] = [[3.5, 5.5], [4.5, 5.5], [4.5, 6.5], [3.5, 6.5]];
         let clipped = clip_quad_against_unit_cell(&quad, (3, 5));
         let area = signed_area(&clipped).abs();
         assert!(approx_eq(area, 0.25, TOL));
@@ -335,12 +299,7 @@ mod tests {
     fn clip_clockwise_subject_returns_same_magnitude() {
         // Same overlap geometry as the partial-overlap test but with
         // clockwise winding. Magnitude must match.
-        let quad: [Point; 4] = [
-            [0.5, 0.5],
-            [0.5, 1.5],
-            [1.5, 1.5],
-            [1.5, 0.5],
-        ];
+        let quad: [Point; 4] = [[0.5, 0.5], [0.5, 1.5], [1.5, 1.5], [1.5, 0.5]];
         let clipped = clip_quad_against_unit_cell(&quad, (0, 0));
         let area = signed_area(&clipped).abs();
         assert!(approx_eq(area, 0.25, TOL));

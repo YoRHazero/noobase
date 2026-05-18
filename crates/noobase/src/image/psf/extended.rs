@@ -336,13 +336,9 @@ pub enum StitchError {
     OversampleNotOdd { oversample: usize },
     #[error("core must be square; got ({rows}, {cols})")]
     CoreNotSquare { rows: usize, cols: usize },
-    #[error(
-        "core side ({core_side}) must be an integer multiple of oversample ({oversample})"
-    )]
+    #[error("core side ({core_side}) must be an integer multiple of oversample ({oversample})")]
     CoreSizeNotMultiple { core_side: usize, oversample: usize },
-    #[error(
-        "derived stamp_size (core_side / oversample) must be odd; got {stamp_size}"
-    )]
+    #[error("derived stamp_size (core_side / oversample) must be odd; got {stamp_size}")]
     DerivedStampSizeEven { stamp_size: usize },
     #[error("wing must have odd dimensions to have a defined center; got ({rows}, {cols})")]
     WingNotOdd { rows: usize, cols: usize },
@@ -374,13 +370,9 @@ pub enum ExtendedPsfError {
     OversampleNotOdd { oversample: usize },
     #[error("core must be square; got ({rows}, {cols})")]
     CoreNotSquare { rows: usize, cols: usize },
-    #[error(
-        "core side ({core_side}) must be an integer multiple of oversample ({oversample})"
-    )]
+    #[error("core side ({core_side}) must be an integer multiple of oversample ({oversample})")]
     CoreSizeNotMultiple { core_side: usize, oversample: usize },
-    #[error(
-        "derived stamp_size (core_side / oversample) must be odd; got {stamp_size}"
-    )]
+    #[error("derived stamp_size (core_side / oversample) must be odd; got {stamp_size}")]
     DerivedStampSizeEven { stamp_size: usize },
     #[error(
         "wing_data must have odd spatial dimensions to have a defined center; got ({rows}, {cols})"
@@ -434,19 +426,19 @@ fn validate_core(
     if rows != cols {
         return Err(CoreValidationError::NotSquare { rows, cols });
     }
-    if oversample % 2 == 0 {
+    if oversample.is_multiple_of(2) {
         // Also rejects oversample == 0 (0 is even, hence not odd).
         return Err(CoreValidationError::OversampleNotOdd { oversample });
     }
     let core_side = rows;
-    if core_side % oversample != 0 {
+    if !core_side.is_multiple_of(oversample) {
         return Err(CoreValidationError::SizeNotMultiple {
             core_side,
             oversample,
         });
     }
     let stamp_size = core_side / oversample;
-    if stamp_size % 2 == 0 {
+    if stamp_size.is_multiple_of(2) {
         // Catches the degenerate empty model (stamp_size == 0) too.
         return Err(CoreValidationError::StampSizeEven { stamp_size });
     }
@@ -517,13 +509,8 @@ impl From<CoreValidationError> for ExtendedPsfError {
 /// `true` when the stitch geometry is infeasible for the given core /
 /// wing native extents. Used by both entry points (mapped to
 /// `StitchParamsInvalid` / folded into `ParamsInvalid`).
-fn stitch_params_infeasible(
-    params: &StitchParams,
-    core_native_half: f64,
-    wing_half: f64,
-) -> bool {
-    let positive_finite =
-        |x: f64| x.is_finite() && x > 0.0;
+fn stitch_params_infeasible(params: &StitchParams, core_native_half: f64, wing_half: f64) -> bool {
+    let positive_finite = |x: f64| x.is_finite() && x > 0.0;
     if !positive_finite(params.match_radius)
         || !positive_finite(params.feather_width)
         || !positive_finite(params.ee_aperture_radius)
@@ -546,9 +533,7 @@ fn stitch_params_infeasible(
 /// precondition).
 fn combine_method_invalid(method: CombineMethod) -> bool {
     match method {
-        CombineMethod::ClippedMean { kappa, max_iter } => {
-            kappa <= 0.0 || max_iter == 0
-        }
+        CombineMethod::ClippedMean { kappa, max_iter } => kappa <= 0.0 || max_iter == 0,
         CombineMethod::Median => false,
     }
 }
@@ -586,8 +571,7 @@ fn azimuthal_average(
     let mut weighted_sum = 0.0;
     let mut weight_sum = 0.0;
     for angle_index in 0..NUM_AZIMUTH {
-        let angle =
-            2.0 * std::f64::consts::PI * (angle_index as f64) / (NUM_AZIMUTH as f64);
+        let angle = 2.0 * std::f64::consts::PI * (angle_index as f64) / (NUM_AZIMUTH as f64);
         let offset_row = radius * angle.sin();
         let offset_col = radius * angle.cos();
         let row_coord = center_row + sample_scale * offset_row;
@@ -598,11 +582,7 @@ fn azimuthal_average(
         }
         let sample_weight = match confidence {
             Some(confidence_view) => {
-                let c = catmull_rom_sample(
-                    confidence_view,
-                    row_coord,
-                    col_coord,
-                );
+                let c = catmull_rom_sample(confidence_view, row_coord, col_coord);
                 if !(c.is_finite() && c > 0.0) {
                     continue;
                 }
@@ -762,7 +742,7 @@ pub fn stitch_psf(
 
     let wing_rows = wing.shape()[0];
     let wing_cols = wing.shape()[1];
-    if wing_rows % 2 == 0 || wing_cols % 2 == 0 {
+    if wing_rows.is_multiple_of(2) || wing_cols.is_multiple_of(2) {
         return Err(StitchError::WingNotOdd {
             rows: wing_rows,
             cols: wing_cols,
@@ -777,8 +757,7 @@ pub fn stitch_psf(
             });
         }
     }
-    let wing_half = ((wing_rows as f64 - 1.0) / 2.0)
-        .min((wing_cols as f64 - 1.0) / 2.0);
+    let wing_half = ((wing_rows as f64 - 1.0) / 2.0).min((wing_cols as f64 - 1.0) / 2.0);
     if stitch_params_infeasible(&params, geometry.core_native_half, wing_half) {
         return Err(StitchError::StitchParamsInvalid {
             match_radius: params.match_radius,
@@ -787,7 +766,13 @@ pub fn stitch_psf(
         });
     }
 
-    Ok(stitch_core_and_wing(&core, &geometry, &wing, wing_confidence.as_ref(), &params))
+    Ok(stitch_core_and_wing(
+        &core,
+        &geometry,
+        &wing,
+        wing_confidence.as_ref(),
+        &params,
+    ))
 }
 
 /// The stitch body, shared by `stitch_psf` and the orchestrator (which
@@ -846,11 +831,7 @@ fn stitch_core_and_wing(
             let dr = row as f64 - wing_center_row;
             let dc = col as f64 - wing_center_col;
             let radius = (dr * dr + dc * dc).sqrt();
-            let f_wing = feather_wing_weight(
-                radius,
-                params.match_radius,
-                params.feather_width,
-            );
+            let f_wing = feather_wing_weight(radius, params.match_radius, params.feather_width);
             let raw = wing[(row, col)];
             if f_wing > 0.0 && scale != 0.0 && raw.is_finite() {
                 wing_plane[(row, col)] = f_wing * scale * raw;
@@ -871,11 +852,7 @@ fn stitch_core_and_wing(
             if radius > params.ee_aperture_radius {
                 continue;
             }
-            let f_wing = feather_wing_weight(
-                radius,
-                params.match_radius,
-                params.feather_width,
-            );
+            let f_wing = feather_wing_weight(radius, params.match_radius, params.feather_width);
             let core_native = catmull_rom_sample(
                 core,
                 geometry.core_center + geometry.oversample_f * dr,
@@ -961,7 +938,7 @@ pub fn build_extended_psf<T: Float>(
     let star_count = wing_data.shape()[0];
     let wing_rows = wing_data.shape()[1];
     let wing_cols = wing_data.shape()[2];
-    if wing_rows % 2 == 0 || wing_cols % 2 == 0 {
+    if wing_rows.is_multiple_of(2) || wing_cols.is_multiple_of(2) {
         return Err(ExtendedPsfError::WingNotOdd {
             rows: wing_rows,
             cols: wing_cols,
@@ -985,8 +962,7 @@ pub fn build_extended_psf<T: Float>(
             });
         }
     }
-    let wing_half = ((wing_rows as f64 - 1.0) / 2.0)
-        .min((wing_cols as f64 - 1.0) / 2.0);
+    let wing_half = ((wing_rows as f64 - 1.0) / 2.0).min((wing_cols as f64 - 1.0) / 2.0);
     let (annulus_in, annulus_out) = params.scale_background_annulus;
     let annulus_invalid = !annulus_in.is_finite()
         || !annulus_out.is_finite()
@@ -996,13 +972,11 @@ pub fn build_extended_psf<T: Float>(
     let scale_aperture_invalid = !(params.scale_aperture_radius.is_finite()
         && params.scale_aperture_radius > 0.0)
         || params.scale_aperture_radius > wing_half;
-    let params_invalid = stitch_params_infeasible(
-        &params.stitch,
-        geometry.core_native_half,
-        wing_half,
-    ) || combine_method_invalid(params.combine)
-        || scale_aperture_invalid
-        || annulus_invalid;
+    let params_invalid =
+        stitch_params_infeasible(&params.stitch, geometry.core_native_half, wing_half)
+            || combine_method_invalid(params.combine)
+            || scale_aperture_invalid
+            || annulus_invalid;
     if params_invalid {
         return Err(ExtendedPsfError::ParamsInvalid {
             match_radius: params.stitch.match_radius,
@@ -1014,8 +988,7 @@ pub fn build_extended_psf<T: Float>(
 
     // --- Internal f64: upcast once at the boundary; T never threads
     // through the flow (mirrors robust/nuisance/build_epsf). ---
-    let wing_data_f: Array3<f64> =
-        wing_data.mapv(|value| value.to_f64().unwrap_or(f64::NAN));
+    let wing_data_f: Array3<f64> = wing_data.mapv(|value| value.to_f64().unwrap_or(f64::NAN));
     let wing_weight_f: Option<Array3<f64>> = wing_weight
         .as_ref()
         .map(|w| w.mapv(|value| value.to_f64().unwrap_or(f64::NAN)));
@@ -1029,29 +1002,22 @@ pub fn build_extended_psf<T: Float>(
     // `s x s` window, which exists only when the wing support covers
     // the core stamp. One batched `solve_flux_background::<f64>` call
     // (it already parallelizes over M). ---
-    let core_path_available =
-        star_count > 0 && wing_rows >= stamp_size && wing_cols >= stamp_size;
+    let core_path_available = star_count > 0 && wing_rows >= stamp_size && wing_cols >= stamp_size;
     let core_solution = if core_path_available {
         let row_offset = (wing_rows - stamp_size) / 2;
         let col_offset = (wing_cols - stamp_size) / 2;
-        let mut central = Array3::<f64>::zeros((
-            star_count,
-            stamp_size,
-            stamp_size,
-        ));
+        let mut central = Array3::<f64>::zeros((star_count, stamp_size, stamp_size));
         let mut central_weight = wing_weight_f
             .as_ref()
             .map(|_| Array3::<f64>::zeros((star_count, stamp_size, stamp_size)));
         for star in 0..star_count {
             for i in 0..stamp_size {
                 for j in 0..stamp_size {
-                    central[(star, i, j)] =
-                        wing_data_f[(star, row_offset + i, col_offset + j)];
+                    central[(star, i, j)] = wing_data_f[(star, row_offset + i, col_offset + j)];
                     if let (Some(dst), Some(src)) =
                         (central_weight.as_mut(), wing_weight_f.as_ref())
                     {
-                        dst[(star, i, j)] =
-                            src[(star, row_offset + i, col_offset + j)];
+                        dst[(star, i, j)] = src[(star, row_offset + i, col_offset + j)];
                     }
                 }
             }
@@ -1074,8 +1040,7 @@ pub fn build_extended_psf<T: Float>(
 
     // --- Per-star background + scale + provenance + the normalized,
     // integer-recentered wing stamp. ---
-    let mut normalized =
-        Array3::<f64>::from_elem((star_count, wing_rows, wing_cols), f64::NAN);
+    let mut normalized = Array3::<f64>::from_elem((star_count, wing_rows, wing_cols), f64::NAN);
     let mut normalized_weight = wing_weight_f
         .as_ref()
         .map(|_| Array3::<f64>::zeros((star_count, wing_rows, wing_cols)));
@@ -1086,9 +1051,7 @@ pub fn build_extended_psf<T: Float>(
 
     for star in 0..star_count {
         let stamp = wing_data_f.index_axis(Axis(0), star);
-        let weight_stamp = wing_weight_f
-            .as_ref()
-            .map(|w| w.index_axis(Axis(0), star));
+        let weight_stamp = wing_weight_f.as_ref().map(|w| w.index_axis(Axis(0), star));
 
         let background = annulus_background(
             &stamp,
@@ -1102,9 +1065,7 @@ pub fn build_extended_psf<T: Float>(
         // Preferred: the core solve flux. Fallback (sub-decision A):
         // aperture photometry. Both unusable -> the star is excluded.
         let core_flux = core_solution.as_ref().and_then(|solution| {
-            if solution.ok[star] && solution.flux[star].is_finite()
-                && solution.flux[star] > 0.0
-            {
+            if solution.ok[star] && solution.flux[star].is_finite() && solution.flux[star] > 0.0 {
                 Some(solution.flux[star])
             } else {
                 None
@@ -1147,16 +1108,13 @@ pub fn build_extended_psf<T: Float>(
                 {
                     continue; // out of the recentered window: missing
                 }
-                let value =
-                    wing_data_f[(star, source_row as usize, source_col as usize)];
+                let value = wing_data_f[(star, source_row as usize, source_col as usize)];
                 if value.is_finite() {
                     normalized[(star, row, col)] = (value - background) / scale;
                 }
-                if let (Some(dst), Some(src)) =
-                    (normalized_weight.as_mut(), wing_weight_f.as_ref())
+                if let (Some(dst), Some(src)) = (normalized_weight.as_mut(), wing_weight_f.as_ref())
                 {
-                    dst[(star, row, col)] =
-                        src[(star, source_row as usize, source_col as usize)];
+                    dst[(star, row, col)] = src[(star, source_row as usize, source_col as usize)];
                 }
             }
         }
@@ -1240,8 +1198,7 @@ mod tests {
             for c in 0..side {
                 let dr = r as f64 - center;
                 let dc = c as f64 - center;
-                core[(r, c)] =
-                    (-(dr * dr + dc * dc) / (2.0 * sigma_os * sigma_os)).exp();
+                core[(r, c)] = (-(dr * dr + dc * dc) / (2.0 * sigma_os * sigma_os)).exp();
             }
         }
         let volume: f64 = core.iter().sum::<f64>() / (oversample * oversample) as f64;
@@ -1251,12 +1208,7 @@ mod tests {
     /// The core's native-resolution value at native offset `(dr, dc)`
     /// from center (the decision-12 interpolation-free grid pick, zero
     /// padded beyond the oversampled grid).
-    fn core_native_value(
-        core: &Array2<f64>,
-        oversample: usize,
-        dr: f64,
-        dc: f64,
-    ) -> f64 {
+    fn core_native_value(core: &Array2<f64>, oversample: usize, dr: f64, dc: f64) -> f64 {
         let side = core.shape()[0];
         let center = (side as f64 - 1.0) / 2.0;
         catmull_rom_sample(
@@ -1313,11 +1265,13 @@ mod tests {
             ee_aperture_radius: 18.0,
         };
         let extended =
-            stitch_psf(core.view(), oversample, wing.view(), None, params.clone())
-                .unwrap();
+            stitch_psf(core.view(), oversample, wing.view(), None, params.clone()).unwrap();
 
         // Hybrid shape / meta-info preserved.
-        assert_eq!(extended.core.shape(), &[oversample * stamp_size, oversample * stamp_size]);
+        assert_eq!(
+            extended.core.shape(),
+            &[oversample * stamp_size, oversample * stamp_size]
+        );
         assert_eq!(extended.wing.shape(), &[wing_side, wing_side]);
         assert_eq!(extended.oversample, oversample);
         assert_eq!(extended.match_radius, params.match_radius);
@@ -1328,11 +1282,7 @@ mod tests {
         // ring.
         let ec = (extended.core.shape()[0] as f64 - 1.0) / 2.0;
         let recon = |radius: f64| -> f64 {
-            let f_wing = feather_wing_weight(
-                radius,
-                params.match_radius,
-                params.feather_width,
-            );
+            let f_wing = feather_wing_weight(radius, params.match_radius, params.feather_width);
             let core_az = azimuthal_average(
                 &extended.core.view(),
                 ec,
@@ -1390,11 +1340,7 @@ mod tests {
                 if radius > params.ee_aperture_radius {
                     continue;
                 }
-                let f_wing = feather_wing_weight(
-                    radius,
-                    params.match_radius,
-                    params.feather_width,
-                );
+                let f_wing = feather_wing_weight(radius, params.match_radius, params.feather_width);
                 let core_native = core_native_value(&extended.core, oversample, dr, dc);
                 ee += (1.0 - f_wing) * core_native + extended.wing[(r, c)];
             }
@@ -1485,8 +1431,7 @@ mod tests {
             ee_aperture_radius: 14.0,
         };
         let extended =
-            stitch_psf(core.view(), oversample, wing.view(), None, params.clone())
-                .unwrap();
+            stitch_psf(core.view(), oversample, wing.view(), None, params.clone()).unwrap();
         assert!(extended.wing.iter().all(|&v| v == 0.0));
         assert!(extended.core.iter().all(|v| v.is_finite()));
 
@@ -1501,13 +1446,8 @@ mod tests {
                 if radius > params.ee_aperture_radius {
                     continue;
                 }
-                let f_wing = feather_wing_weight(
-                    radius,
-                    params.match_radius,
-                    params.feather_width,
-                );
-                ee += (1.0 - f_wing)
-                    * core_native_value(&extended.core, oversample, dr, dc);
+                let f_wing = feather_wing_weight(radius, params.match_radius, params.feather_width);
+                ee += (1.0 - f_wing) * core_native_value(&extended.core, oversample, dr, dc);
             }
         }
         assert!((ee - 1.0).abs() < 1e-9, "pure-core EE = {ee}");
@@ -1549,27 +1489,23 @@ mod tests {
 
         // OversampleNotOdd (including 0).
         assert_eq!(
-            stitch_psf(good_core.view(), 4, good_wing.view(), None, good.clone())
-                .unwrap_err(),
+            stitch_psf(good_core.view(), 4, good_wing.view(), None, good.clone()).unwrap_err(),
             StitchError::OversampleNotOdd { oversample: 4 }
         );
         assert_eq!(
-            stitch_psf(good_core.view(), 0, good_wing.view(), None, good.clone())
-                .unwrap_err(),
+            stitch_psf(good_core.view(), 0, good_wing.view(), None, good.clone()).unwrap_err(),
             StitchError::OversampleNotOdd { oversample: 0 }
         );
         // CoreNotSquare.
         let rect = Array2::<f64>::zeros((10, 12));
         assert_eq!(
-            stitch_psf(rect.view(), 5, good_wing.view(), None, good.clone())
-                .unwrap_err(),
+            stitch_psf(rect.view(), 5, good_wing.view(), None, good.clone()).unwrap_err(),
             StitchError::CoreNotSquare { rows: 10, cols: 12 }
         );
         // CoreSizeNotMultiple.
         let not_mult = Array2::<f64>::zeros((76, 76));
         assert_eq!(
-            stitch_psf(not_mult.view(), 5, good_wing.view(), None, good.clone())
-                .unwrap_err(),
+            stitch_psf(not_mult.view(), 5, good_wing.view(), None, good.clone()).unwrap_err(),
             StitchError::CoreSizeNotMultiple {
                 core_side: 76,
                 oversample: 5
@@ -1578,15 +1514,13 @@ mod tests {
         // DerivedStampSizeEven (5 * 4 = 20, derived s = 4).
         let even_s = Array2::<f64>::zeros((20, 20));
         assert_eq!(
-            stitch_psf(even_s.view(), 5, good_wing.view(), None, good.clone())
-                .unwrap_err(),
+            stitch_psf(even_s.view(), 5, good_wing.view(), None, good.clone()).unwrap_err(),
             StitchError::DerivedStampSizeEven { stamp_size: 4 }
         );
         // WingNotOdd.
         let even_wing = Array2::<f64>::zeros((60, 61));
         assert_eq!(
-            stitch_psf(good_core.view(), 5, even_wing.view(), None, good.clone())
-                .unwrap_err(),
+            stitch_psf(good_core.view(), 5, even_wing.view(), None, good.clone()).unwrap_err(),
             StitchError::WingNotOdd { rows: 60, cols: 61 }
         );
         // WingConfidenceShapeMismatch.
@@ -1630,14 +1564,8 @@ mod tests {
                 ee_aperture_radius: 100.0,
             }, // aperture beyond the wing half (30)
         ] {
-            let err = stitch_psf(
-                good_core.view(),
-                5,
-                good_wing.view(),
-                None,
-                bad.clone(),
-            )
-            .unwrap_err();
+            let err =
+                stitch_psf(good_core.view(), 5, good_wing.view(), None, bad.clone()).unwrap_err();
             // matches! (not assert_eq!): a NaN field makes the derived
             // PartialEq false even for an otherwise-identical struct.
             assert!(
@@ -1684,8 +1612,7 @@ mod tests {
         Array3::<f64>::from_shape_fn((m, wing_side, wing_side), |(star, r, c)| {
             let dr = r as f64 - wing_center;
             let dc = c as f64 - wing_center;
-            fluxes[star] * truth_native(peak, sigma, dr, dc)
-                + backgrounds[star]
+            fluxes[star] * truth_native(peak, sigma, dr, dc) + backgrounds[star]
         })
     }
 
@@ -1703,13 +1630,7 @@ mod tests {
         let fluxes = [1000.0, 2500.0, 700.0, 1800.0, 3300.0];
         let backgrounds = [10.0, -4.0, 25.0, 0.0, 7.0];
         let sigma = 1.1;
-        let data = synth_bright_stars(
-            &core,
-            sigma,
-            wing_side,
-            &fluxes,
-            &backgrounds,
-        );
+        let data = synth_bright_stars(&core, sigma, wing_side, &fluxes, &backgrounds);
         let wing_delta = Array2::<f64>::zeros((fluxes.len(), 2));
         let params = ExtendedPsfParams {
             stitch: StitchParams {
@@ -1740,8 +1661,7 @@ mod tests {
             assert!(built.star_ok[star]);
             assert!(built.star_scale_from_core[star]);
             assert!(
-                (built.star_flux[star] - fluxes[star]).abs()
-                    < 1e-5 * fluxes[star],
+                (built.star_flux[star] - fluxes[star]).abs() < 1e-5 * fluxes[star],
                 "star {star} flux {} vs {}",
                 built.star_flux[star],
                 fluxes[star]
@@ -1757,21 +1677,16 @@ mod tests {
         // Reference: hand-normalize with the known truth and combine.
         let wing_center = (wing_side as f64 - 1.0) / 2.0;
         let peak = core_peak(&core);
-        let reference_norm = Array3::<f64>::from_shape_fn(
-            (fluxes.len(), wing_side, wing_side),
-            |(star, r, c)| {
+        let reference_norm =
+            Array3::<f64>::from_shape_fn((fluxes.len(), wing_side, wing_side), |(star, r, c)| {
                 let dr = r as f64 - wing_center;
                 let dc = c as f64 - wing_center;
                 truth_native(peak, sigma, dr, dc)
-                    + (backgrounds[star]
-                        - built.star_background[star])
-                        / fluxes[star]
-            },
-        );
-        let reference =
-            robust_combine::<f64>(reference_norm.view(), None, params.combine)
-                .unwrap()
-                .combined;
+                    + (backgrounds[star] - built.star_background[star]) / fluxes[star]
+            });
+        let reference = robust_combine::<f64>(reference_norm.view(), None, params.combine)
+            .unwrap()
+            .combined;
         // Re-stitch the reference with the same geometry and compare the
         // final wing plane (the orchestrator path must equal the
         // hand-built path).
@@ -1809,8 +1724,7 @@ mod tests {
                     params.stitch.match_radius,
                     params.stitch.feather_width,
                 );
-                ee += (1.0 - f_wing)
-                    * core_native_value(&built.extended.core, oversample, dr, dc)
+                ee += (1.0 - f_wing) * core_native_value(&built.extended.core, oversample, dr, dc)
                     + built.extended.wing[(r, c)];
             }
         }
@@ -1829,18 +1743,11 @@ mod tests {
         let wing_side = 61usize;
         let fluxes = [1500.0, 1500.0, 1500.0, 1500.0];
         let backgrounds = [5.0, 5.0, 5.0, 5.0];
-        let data = synth_bright_stars(
-            &core,
-            1.1,
-            wing_side,
-            &fluxes,
-            &backgrounds,
-        );
+        let data = synth_bright_stars(&core, 1.1, wing_side, &fluxes, &backgrounds);
         // Saturate star 1's central s x s window (weight 0 there) so the
         // core solve has too few valid pixels.
         let row_off = (wing_side - stamp_size) / 2;
-        let mut weight =
-            Array3::<f64>::from_elem((4, wing_side, wing_side), 1.0);
+        let mut weight = Array3::<f64>::from_elem((4, wing_side, wing_side), 1.0);
         for i in 0..stamp_size {
             for j in 0..stamp_size {
                 weight[(1, row_off + i, row_off + j)] = 0.0;
@@ -1889,15 +1796,8 @@ mod tests {
         let fluxes = [1200.0, 1200.0, 1200.0];
         let backgrounds = [3.0, 3.0, 3.0];
         let sigma = 1.1;
-        let data = synth_bright_stars(
-            &core,
-            sigma,
-            wing_side,
-            &fluxes,
-            &backgrounds,
-        );
-        let mut weight =
-            Array3::<f64>::from_elem((3, wing_side, wing_side), 1.0);
+        let data = synth_bright_stars(&core, sigma, wing_side, &fluxes, &backgrounds);
+        let mut weight = Array3::<f64>::from_elem((3, wing_side, wing_side), 1.0);
         for r in 0..wing_side {
             for c in 0..wing_side {
                 weight[(2, r, c)] = 0.0; // star 2 entirely unusable
@@ -1933,20 +1833,17 @@ mod tests {
         // The wing is still recovered from the two good stars.
         let wing_center = (wing_side as f64 - 1.0) / 2.0;
         let peak = core_peak(&core);
-        let reference_norm = Array3::<f64>::from_shape_fn(
-            (2, wing_side, wing_side),
-            |(star, r, c)| {
+        let reference_norm =
+            Array3::<f64>::from_shape_fn((2, wing_side, wing_side), |(star, r, c)| {
                 let dr = r as f64 - wing_center;
                 let dc = c as f64 - wing_center;
                 let s = if star == 0 { 0 } else { 1 };
                 truth_native(peak, sigma, dr, dc)
                     + (backgrounds[s] - built.star_background[s]) / fluxes[s]
-            },
-        );
-        let reference =
-            robust_combine::<f64>(reference_norm.view(), None, params.combine)
-                .unwrap()
-                .combined;
+            });
+        let reference = robust_combine::<f64>(reference_norm.view(), None, params.combine)
+            .unwrap()
+            .combined;
         let geometry = validate_core(&core.view(), oversample).unwrap();
         let reference_extended = stitch_core_and_wing(
             &core.view(),
@@ -1981,16 +1878,9 @@ mod tests {
         let wing_side = 61usize;
         let fluxes = [900.0, 1400.0, 2000.0];
         let backgrounds = [2.0, 6.0, -3.0];
-        let data = synth_bright_stars(
-            &core,
-            1.1,
-            wing_side,
-            &fluxes,
-            &backgrounds,
-        );
+        let data = synth_bright_stars(&core, 1.1, wing_side, &fluxes, &backgrounds);
         let row_off = (wing_side - stamp_size) / 2;
-        let mut weight =
-            Array3::<f64>::from_elem((3, wing_side, wing_side), 1.0);
+        let mut weight = Array3::<f64>::from_elem((3, wing_side, wing_side), 1.0);
         for star in 0..3 {
             for i in 0..stamp_size {
                 for j in 0..stamp_size {
@@ -2009,11 +1899,8 @@ mod tests {
             scale_background_annulus: (22.0, 28.0),
         };
         let zero_delta = Array2::<f64>::zeros((3, 2));
-        let subpixel_delta = Array2::<f64>::from_shape_vec(
-            (3, 2),
-            vec![0.3, -0.4, 0.49, 0.1, -0.49, 0.2],
-        )
-        .unwrap();
+        let subpixel_delta =
+            Array2::<f64>::from_shape_vec((3, 2), vec![0.3, -0.4, 0.49, 0.1, -0.49, 0.2]).unwrap();
         let from_zero = build_extended_psf(
             data.view(),
             Some(weight.view()),
@@ -2066,8 +1953,7 @@ mod tests {
         };
 
         // M = 1: a single bright star still produces a wing.
-        let data1 =
-            synth_bright_stars(&core, 1.2, wing_side, &[1700.0], &[4.0]);
+        let data1 = synth_bright_stars(&core, 1.2, wing_side, &[1700.0], &[4.0]);
         let built1 = build_extended_psf(
             data1.view(),
             None,
@@ -2109,8 +1995,7 @@ mod tests {
                     params.stitch.match_radius,
                     params.stitch.feather_width,
                 );
-                ee += (1.0 - f_wing)
-                    * core_native_value(&built0.extended.core, oversample, dr, dc);
+                ee += (1.0 - f_wing) * core_native_value(&built0.extended.core, oversample, dr, dc);
             }
         }
         assert!((ee - 1.0).abs() < 1e-9, "M=0 pure-core EE = {ee}");
@@ -2124,13 +2009,7 @@ mod tests {
         let wing_side = 61usize;
         let fluxes = [1000.0, 2000.0, 1500.0];
         let backgrounds = [5.0, -2.0, 8.0];
-        let data64 = synth_bright_stars(
-            &core,
-            1.1,
-            wing_side,
-            &fluxes,
-            &backgrounds,
-        );
+        let data64 = synth_bright_stars(&core, 1.1, wing_side, &fluxes, &backgrounds);
         let data32: Array3<f32> = data64.mapv(|v| v as f32);
         let wing_delta = Array2::<f64>::zeros((3, 2));
         let params = ExtendedPsfParams::default();
@@ -2163,12 +2042,7 @@ mod tests {
             params,
         )
         .unwrap();
-        for (a, b) in from64
-            .extended
-            .wing
-            .iter()
-            .zip(from32.extended.wing.iter())
-        {
+        for (a, b) in from64.extended.wing.iter().zip(from32.extended.wing.iter()) {
             assert!(
                 (a - b).abs() < 1e-3 * a.abs().max(1.0),
                 "f32/f64 wing mismatch: {a} vs {b}"
@@ -2192,13 +2066,7 @@ mod tests {
         let wing_side = 61usize;
         let fluxes = [1100.0, 1700.0, 2300.0, 800.0];
         let backgrounds = [4.0, -1.0, 9.0, 2.0];
-        let data = synth_bright_stars(
-            &core,
-            1.2,
-            wing_side,
-            &fluxes,
-            &backgrounds,
-        );
+        let data = synth_bright_stars(&core, 1.2, wing_side, &fluxes, &backgrounds);
         let wing_delta = Array2::<f64>::zeros((4, 2));
         let params = ExtendedPsfParams {
             stitch: StitchParams {
@@ -2232,12 +2100,7 @@ mod tests {
             params,
         )
         .unwrap();
-        for (a, b) in none
-            .extended
-            .wing
-            .iter()
-            .zip(some.extended.wing.iter())
-        {
+        for (a, b) in none.extended.wing.iter().zip(some.extended.wing.iter()) {
             assert!(
                 (a - b).abs() < 1e-9 * a.abs().max(1.0),
                 "None vs all-ones weight must agree: {a} vs {b}"
@@ -2262,17 +2125,10 @@ mod tests {
         let wing_side = 61usize;
         let sigma = 1.1;
         let fluxes = [
-            1000.0, 1400.0, 900.0, 2100.0, 1700.0, 1200.0, 2600.0, 800.0,
-            1500.0,
+            1000.0, 1400.0, 900.0, 2100.0, 1700.0, 1200.0, 2600.0, 800.0, 1500.0,
         ];
         let backgrounds = [5.0, -3.0, 9.0, 1.0, 7.0, 0.0, 12.0, -2.0, 4.0];
-        let clean = synth_bright_stars(
-            &core,
-            sigma,
-            wing_side,
-            &fluxes,
-            &backgrounds,
-        );
+        let clean = synth_bright_stars(&core, sigma, wing_side, &fluxes, &backgrounds);
         let mut rng = SplitMix64::new(0x7151_3771_2DEA_D17F);
         let mut noisy = clean.clone();
         for value in noisy.iter_mut() {
@@ -2341,19 +2197,11 @@ mod tests {
         // hand-built (data - bg)/scale -> robust_combine -> stitch
         // reference using the orchestrator's own per-star bg/scale.
         let geometry = validate_core(&core.view(), oversample).unwrap();
-        let reference_norm = Array3::<f64>::from_shape_fn(
-            (fluxes.len(), wing_side, wing_side),
-            |(star, r, c)| {
-                (plus[(star, r, c)] - built_plus.star_background[star])
-                    / built_plus.star_flux[star]
-            },
-        );
-        let reference = robust_combine::<f64>(
-            reference_norm.view(),
-            None,
-            params.combine,
-        )
-        .unwrap();
+        let reference_norm =
+            Array3::<f64>::from_shape_fn((fluxes.len(), wing_side, wing_side), |(star, r, c)| {
+                (plus[(star, r, c)] - built_plus.star_background[star]) / built_plus.star_flux[star]
+            });
+        let reference = robust_combine::<f64>(reference_norm.view(), None, params.combine).unwrap();
         // The orchestrator feeds robust_combine's weight plane as the
         // seam-match confidence; the reference must do the same.
         let reference_extended = stitch_core_and_wing(
@@ -2378,7 +2226,12 @@ mod tests {
         // windows); the table reports finite scales/backgrounds.
         assert!(built_plus.star_ok.iter().all(|&ok| ok));
         assert!(built_plus.star_scale_from_core.iter().all(|&v| v));
-        assert!(built_plus.star_flux.iter().all(|f| f.is_finite() && *f > 0.0));
+        assert!(
+            built_plus
+                .star_flux
+                .iter()
+                .all(|f| f.is_finite() && *f > 0.0)
+        );
     }
 
     #[test]
@@ -2433,15 +2286,8 @@ mod tests {
         // CoreSizeNotMultiple.
         let nm = Array2::<f64>::zeros((76, 76));
         assert_eq!(
-            build_extended_psf(
-                data.view(),
-                None,
-                delta.view(),
-                nm.view(),
-                5,
-                good.clone()
-            )
-            .unwrap_err(),
+            build_extended_psf(data.view(), None, delta.view(), nm.view(), 5, good.clone())
+                .unwrap_err(),
             ExtendedPsfError::CoreSizeNotMultiple {
                 core_side: 76,
                 oversample: 5
@@ -2450,15 +2296,8 @@ mod tests {
         // DerivedStampSizeEven.
         let es = Array2::<f64>::zeros((20, 20));
         assert_eq!(
-            build_extended_psf(
-                data.view(),
-                None,
-                delta.view(),
-                es.view(),
-                5,
-                good.clone()
-            )
-            .unwrap_err(),
+            build_extended_psf(data.view(), None, delta.view(), es.view(), 5, good.clone())
+                .unwrap_err(),
             ExtendedPsfError::DerivedStampSizeEven { stamp_size: 4 }
         );
         // WingNotOdd.
@@ -2536,15 +2375,9 @@ mod tests {
                 ..good.clone()
             },
         ] {
-            let err = build_extended_psf(
-                data.view(),
-                None,
-                delta.view(),
-                core.view(),
-                5,
-                bad.clone(),
-            )
-            .unwrap_err();
+            let err =
+                build_extended_psf(data.view(), None, delta.view(), core.view(), 5, bad.clone())
+                    .unwrap_err();
             // matches! (not assert_eq!): a NaN field makes the derived
             // PartialEq false even for an otherwise-identical struct.
             assert!(

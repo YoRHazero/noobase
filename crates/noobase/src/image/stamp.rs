@@ -90,16 +90,12 @@ pub enum StampError {
         rows: usize,
         cols: usize,
     },
-    #[error(
-        "error shape {error_shape:?} must equal cutout shape {cutout_shape:?}"
-    )]
+    #[error("error shape {error_shape:?} must equal cutout shape {cutout_shape:?}")]
     ErrorShapeMismatch {
         error_shape: (usize, usize),
         cutout_shape: (usize, usize),
     },
-    #[error(
-        "mask shape {mask_shape:?} must equal cutout shape {cutout_shape:?}"
-    )]
+    #[error("mask shape {mask_shape:?} must equal cutout shape {cutout_shape:?}")]
     MaskShapeMismatch {
         mask_shape: (usize, usize),
         cutout_shape: (usize, usize),
@@ -151,7 +147,7 @@ pub fn build_stamp<T: Float>(
     let cutout_cols = cutout.shape()[1];
 
     // --- Hard preconditions (returned as Err). ---
-    if stamp_size % 2 == 0 {
+    if stamp_size.is_multiple_of(2) {
         return Err(StampError::StampSizeEven { stamp_size });
     }
     if stamp_size > cutout_rows || stamp_size > cutout_cols {
@@ -324,16 +320,16 @@ pub fn build_stamp<T: Float>(
 
             let error_ok = match error.as_ref() {
                 Some(error_view) => {
-                    let error_value =
-                        error_view[(source_row, source_column)].to_f64().unwrap_or(f64::NAN);
+                    let error_value = error_view[(source_row, source_column)]
+                        .to_f64()
+                        .unwrap_or(f64::NAN);
                     windowed_error.as_mut().unwrap()[(a, b)] = error_value;
                     error_value.is_finite() && error_value > 0.0
                 }
                 None => true,
             };
 
-            valid[(a, b)] =
-                value.is_finite() && !is_masked(source_row, source_column) && error_ok;
+            valid[(a, b)] = value.is_finite() && !is_masked(source_row, source_column) && error_ok;
         }
     }
 
@@ -411,7 +407,11 @@ mod tests {
         .unwrap()
         .expect("expected a stamp");
 
-        assert!(result.delta.0.abs() < 1e-6, "delta_row = {}", result.delta.0);
+        assert!(
+            result.delta.0.abs() < 1e-6,
+            "delta_row = {}",
+            result.delta.0
+        );
         assert!(
             result.delta.1.abs() < 1e-6,
             "delta_col = {}",
@@ -446,7 +446,11 @@ mod tests {
         .unwrap()
         .expect("expected a stamp");
 
-        assert!(result.delta.0.abs() < 1e-4, "delta_row = {}", result.delta.0);
+        assert!(
+            result.delta.0.abs() < 1e-4,
+            "delta_row = {}",
+            result.delta.0
+        );
         assert!(
             result.delta.1.abs() < 1e-4,
             "delta_col = {}",
@@ -504,9 +508,7 @@ mod tests {
         );
         // delta is exactly centroid - round(centroid) per axis.
         assert!((result.delta.0 - (centroid_row - centroid_row.round())).abs() < TOL);
-        assert!(
-            (result.delta.1 - (centroid_column - centroid_column.round())).abs() < TOL
-        );
+        assert!((result.delta.1 - (centroid_column - centroid_column.round())).abs() < TOL);
     }
 
     #[test]
@@ -654,10 +656,7 @@ mod tests {
         .unwrap()
         .expect("expected a stamp");
         // Window origin is (3, 3); cutout (4, 4) -> stamp (1, 1).
-        assert!(
-            !result2.valid[(1, 1)],
-            "masked pixel must be valid=false"
-        );
+        assert!(!result2.valid[(1, 1)], "masked pixel must be valid=false");
         // A neighbouring unmasked finite pixel stays valid.
         assert!(result2.valid[(0, 0)]);
     }

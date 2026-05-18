@@ -19,25 +19,22 @@
 //! adjoint share one weight function by construction -- the structural
 //! guarantee that `accumulate` is the exact transpose of `render`.
 
-mod kernel;
 pub mod accumulate;
 pub mod build_epsf;
 pub mod extended;
+mod kernel;
 pub mod nuisance;
 pub mod render;
 pub mod robust;
 
 pub use accumulate::{AccumulateError, accumulate};
-pub use build_epsf::{
-    BuildEpsf, BuildEpsfError, BuildEpsfParams, ResidualReweight, build_epsf,
-};
+pub use build_epsf::{BuildEpsf, BuildEpsfError, BuildEpsfParams, ResidualReweight, build_epsf};
 pub use extended::{
-    ExtendedPsf, ExtendedPsfBuilt, ExtendedPsfError, ExtendedPsfParams,
-    StitchError, StitchParams, build_extended_psf, stitch_psf,
+    ExtendedPsf, ExtendedPsfBuilt, ExtendedPsfError, ExtendedPsfParams, StitchError, StitchParams,
+    build_extended_psf, stitch_psf,
 };
 pub use nuisance::{
-    FluxBackground, NuisanceError, NuisanceRefined, refine_nuisance,
-    solve_flux_background,
+    FluxBackground, NuisanceError, NuisanceRefined, refine_nuisance, solve_flux_background,
 };
 pub use render::{RenderError, render};
 pub use robust::{CombineMethod, RobustCombined, RobustError, robust_combine};

@@ -79,13 +79,9 @@ pub enum RenderError {
     EpsfNotSquare { rows: usize, cols: usize },
     #[error("oversample must be odd; got {oversample}")]
     OversampleNotOdd { oversample: usize },
-    #[error(
-        "epsf side ({epsf_side}) must be an integer multiple of oversample ({oversample})"
-    )]
+    #[error("epsf side ({epsf_side}) must be an integer multiple of oversample ({oversample})")]
     EpsfSizeNotMultiple { epsf_side: usize, oversample: usize },
-    #[error(
-        "derived stamp_size (epsf_side / oversample) must be odd; got {stamp_size}"
-    )]
+    #[error("derived stamp_size (epsf_side / oversample) must be odd; got {stamp_size}")]
     DerivedStampSizeEven { stamp_size: usize },
     #[error(
         "batch dimensions disagree: delta shape {delta:?} must be (N, 2) with N == flux len ({flux}) == background len ({background})"
@@ -144,27 +140,24 @@ pub fn render(
             cols: epsf_cols,
         });
     }
-    if oversample % 2 == 0 {
+    if oversample.is_multiple_of(2) {
         // Also rejects oversample == 0 (0 is even, hence not odd).
         return Err(RenderError::OversampleNotOdd { oversample });
     }
     let epsf_side = epsf_rows;
-    if epsf_side % oversample != 0 {
+    if !epsf_side.is_multiple_of(oversample) {
         return Err(RenderError::EpsfSizeNotMultiple {
             epsf_side,
             oversample,
         });
     }
     let stamp_size = epsf_side / oversample;
-    if stamp_size % 2 == 0 {
+    if stamp_size.is_multiple_of(2) {
         // Catches the degenerate empty model (stamp_size == 0) too.
         return Err(RenderError::DerivedStampSizeEven { stamp_size });
     }
     let batch_size = flux.len();
-    if delta.shape()[1] != 2
-        || delta.shape()[0] != batch_size
-        || background.len() != batch_size
-    {
+    if delta.shape()[1] != 2 || delta.shape()[0] != batch_size || background.len() != batch_size {
         return Err(RenderError::BatchLengthMismatch {
             delta: (delta.shape()[0], delta.shape()[1]),
             flux: batch_size,
@@ -225,8 +218,7 @@ fn render_stamp(
     for i in 0..stamp_size {
         let k_u = psf_center + oversample * ((i as f64 - detector_center) - delta_row);
         for j in 0..stamp_size {
-            let k_v =
-                psf_center + oversample * ((j as f64 - detector_center) - delta_column);
+            let k_v = psf_center + oversample * ((j as f64 - detector_center) - delta_column);
             stamp_out[(i, j)] = flux * catmull_rom_sample(&epsf, k_u, k_v) + background;
         }
     }
@@ -351,10 +343,9 @@ mod tests {
             for j in 0..stamp_size {
                 let du = (i as f64 - detector_center) - delta_row;
                 let dv = (j as f64 - detector_center) - delta_col;
-                let expected = flux
-                    * amplitude
-                    * (-0.5 * (du * du + dv * dv) / (sigma_det * sigma_det)).exp()
-                    + back;
+                let expected =
+                    flux * amplitude * (-0.5 * (du * du + dv * dv) / (sigma_det * sigma_det)).exp()
+                        + back;
                 max_abs_error = max_abs_error.max((out[(0, i, j)] - expected).abs());
             }
         }
@@ -673,10 +664,8 @@ mod tests {
         // Reconstructed centroid (origin + center + delta) must recover
         // the true source location.
         let detector_center = (stamp_size as i64 - 1) / 2;
-        let recon_row =
-            (stamp_result.origin.0 + detector_center) as f64 + stamp_result.delta.0;
-        let recon_col =
-            (stamp_result.origin.1 + detector_center) as f64 + stamp_result.delta.1;
+        let recon_row = (stamp_result.origin.0 + detector_center) as f64 + stamp_result.delta.0;
+        let recon_col = (stamp_result.origin.1 + detector_center) as f64 + stamp_result.delta.1;
         assert!(
             (recon_row - true_row).abs() < 0.05 && (recon_col - true_col).abs() < 0.05,
             "reconstructed centroid ({recon_row}, {recon_col}) far from ({true_row}, {true_col})"

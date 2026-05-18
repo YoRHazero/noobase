@@ -556,8 +556,8 @@ fn robust_combine_impl<T: Scalar>(
 ) -> PyResult<PyRobustCombined> {
     let weight_owned = optional_companion_array3::<T>(weight, "weight")?;
     let weight_view = weight_owned.as_ref().map(|array| array.view());
-    let inner = core_psf::robust_combine::<T>(stack.view(), weight_view, method)
-        .map_err(to_value_error)?;
+    let inner =
+        core_psf::robust_combine::<T>(stack.view(), weight_view, method).map_err(to_value_error)?;
     Ok(PyRobustCombined { inner })
 }
 
@@ -629,14 +629,9 @@ fn solve_flux_background_impl<T: Scalar>(
 ) -> PyResult<PyFluxBackground> {
     let weight_owned = optional_companion_array3::<T>(weight, "weight")?;
     let weight_view = weight_owned.as_ref().map(|array| array.view());
-    let inner = core_psf::solve_flux_background::<T>(
-        epsf,
-        oversample,
-        data.view(),
-        weight_view,
-        delta,
-    )
-    .map_err(to_value_error)?;
+    let inner =
+        core_psf::solve_flux_background::<T>(epsf, oversample, data.view(), weight_view, delta)
+            .map_err(to_value_error)?;
     Ok(PyFluxBackground { inner })
 }
 

@@ -9,7 +9,12 @@
 use ndarray::{Array2, Array3};
 use noobase::image::reproject_exact;
 
-fn shifted_identity_corners(height_out: usize, width_out: usize, shift_x: f64, shift_y: f64) -> Array3<f64> {
+fn shifted_identity_corners(
+    height_out: usize,
+    width_out: usize,
+    shift_x: f64,
+    shift_y: f64,
+) -> Array3<f64> {
     let mut corners = Array3::<f64>::zeros((height_out + 1, width_out + 1, 2));
     for i_node in 0..=height_out {
         for j_node in 0..=width_out {
@@ -56,7 +61,10 @@ fn f32_and_f64_inputs_agree_within_f32_precision() {
 
             // Footprint and weight only depend on the corner geometry,
             // so f32 and f64 paths must produce *identical* values.
-            assert_eq!(footprint_f64, footprint_f32, "footprint mismatch at ({i}, {j})");
+            assert_eq!(
+                footprint_f64, footprint_f32,
+                "footprint mismatch at ({i}, {j})"
+            );
             assert_eq!(weight_f64, weight_f32, "weight mismatch at ({i}, {j})");
 
             if value_f64.is_nan() {

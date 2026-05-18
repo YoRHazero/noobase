@@ -84,9 +84,7 @@ pub enum AccumulateError {
     OversampleNotOdd { oversample: usize },
     #[error("stamp_size must be odd; got {stamp_size}")]
     StampSizeEven { stamp_size: usize },
-    #[error(
-        "residual shape {residual:?} must be (N, stamp_size, stamp_size) = {expected:?}"
-    )]
+    #[error("residual shape {residual:?} must be (N, stamp_size, stamp_size) = {expected:?}")]
     ResidualShapeMismatch {
         residual: (usize, usize, usize),
         expected: (usize, usize, usize),
@@ -149,11 +147,11 @@ pub fn accumulate(
 ) -> Result<Array2<f64>, AccumulateError> {
     // --- Hard preconditions (returned as Err; no Ok(None) path). The
     // check order is the documented order. ---
-    if oversample % 2 == 0 {
+    if oversample.is_multiple_of(2) {
         // Also rejects oversample == 0 (0 is even, hence not odd).
         return Err(AccumulateError::OversampleNotOdd { oversample });
     }
-    if stamp_size % 2 == 0 {
+    if stamp_size.is_multiple_of(2) {
         // Also rejects stamp_size == 0 (degenerate empty grid).
         return Err(AccumulateError::StampSizeEven { stamp_size });
     }
@@ -179,10 +177,7 @@ pub fn accumulate(
             });
         }
     }
-    if delta.shape()[0] != batch_size
-        || delta.shape()[1] != 2
-        || flux.len() != batch_size
-    {
+    if delta.shape()[0] != batch_size || delta.shape()[1] != 2 || flux.len() != batch_size {
         return Err(AccumulateError::BatchLengthMismatch {
             delta: (delta.shape()[0], delta.shape()[1]),
             residual: batch_size,
@@ -209,9 +204,7 @@ pub fn accumulate(
         .fold(
             || Array2::<f64>::zeros((side, side)),
             |mut partial, stamp_index| {
-                let weight_stamp = weight
-                    .as_ref()
-                    .map(|w| w.index_axis(Axis(0), stamp_index));
+                let weight_stamp = weight.as_ref().map(|w| w.index_axis(Axis(0), stamp_index));
                 accumulate_stamp(
                     &mut partial,
                     residual.index_axis(Axis(0), stamp_index),
@@ -269,8 +262,7 @@ fn accumulate_stamp(
         let base_u = u_floor as i64 - 1;
 
         for j in 0..stamp_size {
-            let k_v =
-                psf_center + oversample * ((j as f64 - detector_center) - delta_column);
+            let k_v = psf_center + oversample * ((j as f64 - detector_center) - delta_column);
             let v_floor = k_v.floor();
             let weights_v = catmull_rom_weights(k_v - v_floor);
             let base_v = v_floor as i64 - 1;
@@ -284,19 +276,18 @@ fn accumulate_stamp(
             // weights `render` gathered (zero-pad outside the grid).
             let coefficient = flux * pixel_weight * residual_stamp[(i, j)];
 
-            for tap_u in 0..4 {
+            for (tap_u, &weight_u) in weights_u.iter().enumerate() {
                 let row = base_u + tap_u as i64;
                 if row < 0 || row >= side {
                     continue; // zero-pad: transpose of zero padding
                 }
-                let weighted_u = coefficient * weights_u[tap_u];
-                for tap_v in 0..4 {
+                let weighted_u = coefficient * weight_u;
+                for (tap_v, &weight_v) in weights_v.iter().enumerate() {
                     let column = base_v + tap_v as i64;
                     if column < 0 || column >= side {
                         continue; // zero-pad: transpose of zero padding
                     }
-                    epsf_acc[(row as usize, column as usize)] +=
-                        weighted_u * weights_v[tap_v];
+                    epsf_acc[(row as usize, column as usize)] += weighted_u * weight_v;
                 }
             }
         }
@@ -345,16 +336,10 @@ mod tests {
         Array2::from_shape_fn((side, side), |_| rng.range(-1.0, 1.0))
     }
 
-    fn random_residual(
-        rng: &mut SplitMix64,
-        batch: usize,
-        stamp_size: usize,
-    ) -> Array3<f64> {
+    fn random_residual(rng: &mut SplitMix64, batch: usize, stamp_size: usize) -> Array3<f64> {
         // Includes negative pixels on purpose (decision 5: negatives are
         // never dropped by sign).
-        Array3::from_shape_fn((batch, stamp_size, stamp_size), |_| {
-            rng.range(-1.0, 1.0)
-        })
+        Array3::from_shape_fn((batch, stamp_size, stamp_size), |_| rng.range(-1.0, 1.0))
     }
 
     fn random_delta(rng: &mut SplitMix64, batch: usize) -> Array2<f64> {
@@ -437,9 +422,8 @@ mod tests {
         let background = Array1::<f64>::zeros(batch);
         // Weights in [0, 2): includes near-zero (effectively masked)
         // pixels.
-        let weight = Array3::from_shape_fn((batch, stamp_size, stamp_size), |_| {
-            rng.range(0.0, 2.0)
-        });
+        let weight =
+            Array3::from_shape_fn((batch, stamp_size, stamp_size), |_| rng.range(0.0, 2.0));
 
         let rendered = render(
             epsf.view(),
@@ -593,9 +577,8 @@ mod tests {
         let residual = random_residual(&mut rng, batch, stamp_size);
         let delta = random_delta(&mut rng, batch);
         let flux = random_flux(&mut rng, batch);
-        let weight = Array3::from_shape_fn((batch, stamp_size, stamp_size), |_| {
-            rng.range(0.1, 2.0)
-        });
+        let weight =
+            Array3::from_shape_fn((batch, stamp_size, stamp_size), |_| rng.range(0.1, 2.0));
 
         let base = accumulate(
             residual.view(),
@@ -736,15 +719,8 @@ mod tests {
         let delta = arr2(&[[0.0, 0.0]]);
         let flux = Array1::from_elem(1, 1.0);
         for bad in [4usize, 0usize] {
-            let err = accumulate(
-                residual.view(),
-                None,
-                bad,
-                7,
-                delta.view(),
-                flux.view(),
-            )
-            .unwrap_err();
+            let err =
+                accumulate(residual.view(), None, bad, 7, delta.view(), flux.view()).unwrap_err();
             assert_eq!(err, AccumulateError::OversampleNotOdd { oversample: bad });
         }
     }
@@ -755,15 +731,8 @@ mod tests {
         let delta = arr2(&[[0.0, 0.0]]);
         let flux = Array1::from_elem(1, 1.0);
         for bad in [4usize, 0usize] {
-            let err = accumulate(
-                residual.view(),
-                None,
-                5,
-                bad,
-                delta.view(),
-                flux.view(),
-            )
-            .unwrap_err();
+            let err =
+                accumulate(residual.view(), None, 5, bad, delta.view(), flux.view()).unwrap_err();
             assert_eq!(err, AccumulateError::StampSizeEven { stamp_size: bad });
         }
     }
@@ -774,15 +743,7 @@ mod tests {
         let residual = Array3::<f64>::zeros((2, 8, 7));
         let delta = arr2(&[[0.0, 0.0], [0.0, 0.0]]);
         let flux = Array1::from_elem(2, 1.0);
-        let err = accumulate(
-            residual.view(),
-            None,
-            5,
-            7,
-            delta.view(),
-            flux.view(),
-        )
-        .unwrap_err();
+        let err = accumulate(residual.view(), None, 5, 7, delta.view(), flux.view()).unwrap_err();
         assert_eq!(
             err,
             AccumulateError::ResidualShapeMismatch {
@@ -821,15 +782,7 @@ mod tests {
         let residual = Array3::<f64>::zeros((2, 7, 7));
         let delta = arr2(&[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]); // (2, 3)
         let flux = Array1::from_elem(2, 1.0);
-        let err = accumulate(
-            residual.view(),
-            None,
-            5,
-            7,
-            delta.view(),
-            flux.view(),
-        )
-        .unwrap_err();
+        let err = accumulate(residual.view(), None, 5, 7, delta.view(), flux.view()).unwrap_err();
         assert_eq!(
             err,
             AccumulateError::BatchLengthMismatch {
@@ -845,15 +798,7 @@ mod tests {
         let residual = Array3::<f64>::zeros((3, 7, 7));
         let delta = arr2(&[[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]); // (3, 2)
         let flux = Array1::from_elem(2, 1.0); // len 2 != N = 3
-        let err = accumulate(
-            residual.view(),
-            None,
-            5,
-            7,
-            delta.view(),
-            flux.view(),
-        )
-        .unwrap_err();
+        let err = accumulate(residual.view(), None, 5, 7, delta.view(), flux.view()).unwrap_err();
         assert_eq!(
             err,
             AccumulateError::BatchLengthMismatch {

@@ -96,18 +96,17 @@ pub(super) fn catmull_rom_sample(epsf: &ArrayView2<f64>, k_u: f64, k_v: f64) -> 
     let base_v = v_floor as i64 - 1;
 
     let mut value = 0.0_f64;
-    for tap_u in 0..4 {
+    for (tap_u, &weight_u) in weights_u.iter().enumerate() {
         let row = base_u + tap_u as i64;
         if row < 0 || row >= side {
             continue; // zero-pad outside the model grid
         }
-        let weight_u = weights_u[tap_u];
-        for tap_v in 0..4 {
+        for (tap_v, &weight_v) in weights_v.iter().enumerate() {
             let column = base_v + tap_v as i64;
             if column < 0 || column >= side {
                 continue; // zero-pad outside the model grid
             }
-            value += epsf[(row as usize, column as usize)] * weight_u * weights_v[tap_v];
+            value += epsf[(row as usize, column as usize)] * weight_u * weight_v;
         }
     }
     value

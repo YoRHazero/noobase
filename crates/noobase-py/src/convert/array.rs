@@ -40,7 +40,11 @@ pub(crate) fn required_typed_array1<T: Scalar>(
 ) -> PyResult<Array1<T>> {
     match value.extract::<PyReadonlyArray1<'_, T>>() {
         Ok(array) => Ok(array.as_array().to_owned()),
-        Err(_) => Err(dtype_mismatch_error(T::DTYPE_NAME, "other", mismatch_context)),
+        Err(_) => Err(dtype_mismatch_error(
+            T::DTYPE_NAME,
+            "other",
+            mismatch_context,
+        )),
     }
 }
 
@@ -61,7 +65,11 @@ pub(crate) fn optional_typed_array1<T: Scalar>(
     }
     match bound.extract::<PyReadonlyArray1<'_, T>>() {
         Ok(array) => Ok(Some(array.as_array().to_owned())),
-        Err(_) => Err(dtype_mismatch_error(T::DTYPE_NAME, "other", mismatch_context)),
+        Err(_) => Err(dtype_mismatch_error(
+            T::DTYPE_NAME,
+            "other",
+            mismatch_context,
+        )),
     }
 }
 
@@ -95,7 +103,11 @@ pub(crate) fn required_typed_array2<T: Scalar>(
 ) -> PyResult<Array2<T>> {
     match value.extract::<PyReadonlyArray2<'_, T>>() {
         Ok(array) => Ok(array.as_array().to_owned()),
-        Err(_) => Err(dtype_mismatch_error(T::DTYPE_NAME, "other", mismatch_context)),
+        Err(_) => Err(dtype_mismatch_error(
+            T::DTYPE_NAME,
+            "other",
+            mismatch_context,
+        )),
     }
 }
 
@@ -146,10 +158,7 @@ pub(crate) fn optional_companion_array3<T: Scalar>(
 
 /// Extract a required 2-D `float64` array (the model / delta arrays that
 /// are always f64 regardless of the data channel).
-pub(crate) fn required_f64_array2(
-    value: &Bound<'_, PyAny>,
-    name: &str,
-) -> PyResult<Array2<f64>> {
+pub(crate) fn required_f64_array2(value: &Bound<'_, PyAny>, name: &str) -> PyResult<Array2<f64>> {
     match value.extract::<PyReadonlyArray2<'_, f64>>() {
         Ok(array) => Ok(array.as_array().to_owned()),
         Err(_) => Err(PyValueError::new_err(format!(

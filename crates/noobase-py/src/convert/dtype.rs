@@ -208,13 +208,11 @@ macro_rules! with_grid_pair {
         match ($a, $b) {
             ($crate::grid::GridInner::F64($ga), $crate::grid::GridInner::F64($gb)) => $body,
             ($crate::grid::GridInner::F32($ga), $crate::grid::GridInner::F32($gb)) => $body,
-            (__left, __right) => ::std::result::Result::Err(
-                $crate::convert::dtype_mismatch_error(
-                    $crate::convert::grid_dtype_name(__left),
-                    $crate::convert::grid_dtype_name(__right),
-                    "source grid vs target grid",
-                ),
-            ),
+            (__left, __right) => ::std::result::Result::Err($crate::convert::dtype_mismatch_error(
+                $crate::convert::grid_dtype_name(__left),
+                $crate::convert::grid_dtype_name(__right),
+                "source grid vs target grid",
+            )),
         }
     };
 }

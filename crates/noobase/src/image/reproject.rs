@@ -318,10 +318,8 @@ pub(crate) fn process_output_row(
                 // Always compute the geometric overlap first: the
                 // footprint accumulator must count all in-bounds area
                 // regardless of input data validity.
-                let clipped = clip_quad_against_unit_cell(
-                    &quad,
-                    (cell_column as i32, cell_row as i32),
-                );
+                let clipped =
+                    clip_quad_against_unit_cell(&quad, (cell_column as i32, cell_row as i32));
                 if clipped.is_empty() {
                     continue;
                 }
@@ -330,8 +328,7 @@ pub(crate) fn process_output_row(
                     continue;
                 }
                 denominator_geom += overlap_area;
-                let pixel_value =
-                    image_in_f64[(cell_row as usize, cell_column as usize)];
+                let pixel_value = image_in_f64[(cell_row as usize, cell_column as usize)];
                 if pixel_value.is_nan() {
                     // NaN-as-mask: drop this input pixel from the
                     // numerator and the valid denominator (weight),
@@ -349,10 +346,8 @@ pub(crate) fn process_output_row(
             row_image[column_index] = f64::NAN;
         }
         if output_pixel_area > 0.0 {
-            row_footprint[column_index] =
-                (denominator_geom / output_pixel_area).clamp(0.0, 1.0);
-            row_weight[column_index] =
-                (denominator_valid / output_pixel_area).clamp(0.0, 1.0);
+            row_footprint[column_index] = (denominator_geom / output_pixel_area).clamp(0.0, 1.0);
+            row_weight[column_index] = (denominator_valid / output_pixel_area).clamp(0.0, 1.0);
         } else {
             row_footprint[column_index] = 0.0;
             row_weight[column_index] = 0.0;
@@ -403,11 +398,8 @@ mod tests {
 
     #[test]
     fn identity_reprojection_preserves_image_footprint_and_weight_f64() {
-        let image: Array2<f64> = ndarray::array![
-            [1.0, 2.0, 3.0],
-            [4.0, 5.0, 6.0],
-            [7.0, 8.0, 9.0],
-        ];
+        let image: Array2<f64> =
+            ndarray::array![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0],];
         let corners = identity_corners(3, 3);
         let output = reproject_exact(image.view(), corners.view()).unwrap();
         for i in 0..3 {
@@ -421,11 +413,8 @@ mod tests {
 
     #[test]
     fn identity_reprojection_preserves_image_footprint_and_weight_f32() {
-        let image: Array2<f32> = ndarray::array![
-            [1.0, 2.0, 3.0],
-            [4.0, 5.0, 6.0],
-            [7.0, 8.0, 9.0],
-        ];
+        let image: Array2<f32> =
+            ndarray::array![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0],];
         let corners = identity_corners(3, 3);
         let output = reproject_exact(image.view(), corners.view()).unwrap();
         for i in 0..3 {
@@ -643,8 +632,7 @@ mod tests {
         let mut image: Array2<f64> = Array2::zeros((height, width));
         for i in 0..height {
             for j in 0..width {
-                image[(i, j)] =
-                    ((i * 13 + j * 7) % 97) as f64 / 11.0 + (i as f64).sin();
+                image[(i, j)] = ((i * 13 + j * 7) % 97) as f64 / 11.0 + (i as f64).sin();
             }
         }
         let mut corners = Array3::<f64>::zeros((height + 1, width + 1, 2));

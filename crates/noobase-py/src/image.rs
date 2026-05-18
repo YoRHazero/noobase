@@ -115,8 +115,7 @@ fn reproject_exact_impl<'py, T: Scalar>(
     py: Python<'py>,
     corners: ArrayView3<'_, f64>,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let output =
-        core_image::reproject_exact::<T>(image.view(), corners).map_err(to_value_error)?;
+    let output = core_image::reproject_exact::<T>(image.view(), corners).map_err(to_value_error)?;
     let tuple = PyTuple::new(
         py,
         [
