@@ -9,8 +9,8 @@ use pyo3::prelude::*;
 use crate::convert::{
     GridChannel, Scalar, band_triple, build_grid_from_any, coerce_to_grid, dispatch_array,
     dtype_mismatch_error, grid_channel, grid_dtype_name, optional_bool_array1,
-    optional_typed_array1, parse_convention, parse_kind, parse_spacing, required_typed_array1,
-    with_inner,
+    optional_typed_array1, parse_convention, parse_kind, parse_lsf_spec, parse_spacing,
+    required_typed_array1, to_value_error, with_inner,
 };
 use crate::grid::{GridInner, PyGrid};
 
@@ -463,6 +463,70 @@ impl PySpectrum {
             transmission_values,
             convention_enum,
         ))
+    }
+
+    /// Broaden the spectrum with a Gaussian line-spread function.
+    ///
+    /// The spectrum is treated as a noise-free template: only ``flux`` is
+    /// convolved and the result carries no ``error`` / ``mask``. The
+    /// wavelength Grid is returned unchanged and flux is conserved,
+    /// including at the spectrum edges. Works for any wavelength axis: a
+    /// uniform log grid uses a single fixed kernel, anything else uses an
+    /// exact per-pixel variable-width Gaussian.
+    ///
+    /// Both specs describe a Gaussian whose ``sigma / lambda`` ratio is
+    /// constant (``sigma_lambda = sigma_lnlambda * lambda``).
+    ///
+    /// Parameters
+    /// ----------
+    /// spec : {"constant_r", "constant_velocity"}
+    ///     ``"constant_r"`` uses a constant resolving power
+    ///     ``R = lambda / FWHM`` (requires ``resolving_power``).
+    ///     ``"constant_velocity"`` uses a constant velocity dispersion
+    ///     (requires ``sigma`` and ``speed_of_light``).
+    /// resolving_power : float, optional
+    ///     The resolving power ``R`` for ``spec="constant_r"``.
+    /// sigma : float, optional
+    ///     The velocity dispersion for ``spec="constant_velocity"``, in
+    ///     the same unit as ``speed_of_light``.
+    /// speed_of_light : float, optional
+    ///     Speed of light for ``spec="constant_velocity"``, in the same
+    ///     unit as ``sigma``. noobase does not track units; consistency
+    ///     is the caller's responsibility.
+    ///
+    /// Returns
+    /// -------
+    /// Spectrum
+    ///     A new broadened Spectrum on the same wavelength axis.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the spectrum carries ``error`` or ``mask`` (an LSF applies
+    ///     only to noise-free templates — strip them first), if ``spec``
+    ///     is unknown or its required companion is missing, or if the
+    ///     resolution is non-positive.
+    #[pyo3(signature = (*, spec, resolving_power=None, sigma=None, speed_of_light=None))]
+    #[pyo3(
+        text_signature = "(self, *, spec, resolving_power=None, sigma=None, speed_of_light=None)"
+    )]
+    fn convolve_lsf(
+        &self,
+        spec: &str,
+        resolving_power: Option<f64>,
+        sigma: Option<f64>,
+        speed_of_light: Option<f64>,
+    ) -> PyResult<PySpectrum> {
+        let lsf_spec = parse_lsf_spec(spec, resolving_power, sigma, speed_of_light)?;
+        let inner = match &self.inner {
+            SpectrumInner::F64(spectrum) => {
+                SpectrumInner::F64(spectrum.convolve_lsf(lsf_spec).map_err(to_value_error)?)
+            }
+            SpectrumInner::F32(spectrum) => {
+                SpectrumInner::F32(spectrum.convolve_lsf(lsf_spec).map_err(to_value_error)?)
+            }
+        };
+        Ok(PySpectrum::from_inner(inner))
     }
 
     fn __repr__(&self) -> String {

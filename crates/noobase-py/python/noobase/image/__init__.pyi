@@ -1,4 +1,4 @@
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Literal, Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -10,6 +10,23 @@ def reproject_exact(
     image_in: NDArray[Any],
     pixel_corners: NDArray[np.float64],
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]: ...
+
+
+def convolve_psf(
+    image: NDArray[Any],
+    psf: NDArray[Any],
+) -> NDArray[Any]: ...
+
+
+def convolve_gaussian_axis(
+    image: NDArray[Any],
+    *,
+    sigma: float,
+    axis: int = 0,
+    normalization: Literal["sum", "l2", "none"] = "l2",
+    boundary: Literal["zero", "reflect", "nearest"] = "zero",
+    renormalize: bool = False,
+) -> NDArray[Any]: ...
 
 
 def make_pixel_corners(

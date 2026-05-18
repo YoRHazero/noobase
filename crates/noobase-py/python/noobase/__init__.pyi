@@ -139,4 +139,13 @@ class Spectrum:
         convention: Literal["photon_counting", "energy_weighted"] = "photon_counting",
     ) -> tuple[float, Optional[float], float]: ...
 
+    def convolve_lsf(
+        self,
+        *,
+        spec: Literal["constant_r", "constant_velocity"],
+        resolving_power: Optional[float] = None,
+        sigma: Optional[float] = None,
+        speed_of_light: Optional[float] = None,
+    ) -> "Spectrum": ...
+
 

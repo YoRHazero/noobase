@@ -86,6 +86,19 @@ pub(crate) fn optional_bool_array1(
     }
 }
 
+/// Extract a required 2-D channel-`T` array (e.g. a `psf` paired with an
+/// `image`). A non-`T` dtype is the canonical cross-input mismatch
+/// `ValueError` contextualised by `mismatch_context`.
+pub(crate) fn required_typed_array2<T: Scalar>(
+    value: &Bound<'_, PyAny>,
+    mismatch_context: &str,
+) -> PyResult<Array2<T>> {
+    match value.extract::<PyReadonlyArray2<'_, T>>() {
+        Ok(array) => Ok(array.as_array().to_owned()),
+        Err(_) => Err(dtype_mismatch_error(T::DTYPE_NAME, "other", mismatch_context)),
+    }
+}
+
 /// Extract an optional 2-D channel-`T` companion array (e.g. a stamp
 /// `error` paired with `cutout`). Absent / Python `None` -> `None`; a
 /// non-`T` dtype yields "`<name>` must be a 2-D numpy array of dtype

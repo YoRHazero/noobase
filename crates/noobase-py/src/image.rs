@@ -1,11 +1,15 @@
+use ::noobase::convolve::{Boundary, Normalization};
 use ::noobase::image as core_image;
-use ndarray::{Array2, ArrayView3};
+use ndarray::{Array2, ArrayView3, Axis};
 use numpy::{IntoPyArray, PyReadonlyArray3};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
-use crate::convert::{Scalar, dispatch_array, to_value_error};
+use crate::convert::{
+    Scalar, dispatch_array, parse_boundary, parse_normalization, required_typed_array2,
+    to_value_error,
+};
 
 /// Surface-brightness-conserving exact reprojection of a 2-D image.
 ///
@@ -124,9 +128,178 @@ fn reproject_exact_impl<'py, T: Scalar>(
     Ok(tuple.into_any())
 }
 
+/// Convolve a 2-D image with a fixed, centered PSF (true convolution).
+///
+/// The PSF is flipped (both axes reversed) before correlation, so this
+/// is genuine convolution: an asymmetric ePSF keeps its orientation.
+/// NaN / +-inf pixels are treated as missing and excluded from both the
+/// weighted sum and its normalizer, and image edges are likewise
+/// missing — this NaN-as-missing renormalization is the image
+/// subsystem's single convention (same as ``reproject_exact``), so there
+/// is deliberately no boundary or renormalize switch.
+///
+/// PSF normalization is the caller's responsibility: a sum-normalized
+/// PSF gives an interior identity with the renorm acting only at NaN /
+/// edges (flux conserving); an unnormalized PSF yields a local weighted
+/// mean instead.
+///
+/// Parameters
+/// ----------
+/// image : ndarray
+///     2-D image, dtype ``float32`` or ``float64``. NaN / +-inf are
+///     treated as missing.
+/// psf : ndarray
+///     2-D PSF with odd dimensions, same dtype as ``image``.
+///
+/// Returns
+/// -------
+/// ndarray
+///     The convolved image, same shape and dtype as ``image``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``image`` is not a 2-D float32 / float64 array, ``psf`` dtype
+///     does not match ``image``, or ``psf`` does not have odd
+///     dimensions.
+#[pyfunction]
+#[pyo3(name = "convolve_psf")]
+#[pyo3(signature = (image, psf))]
+#[pyo3(text_signature = "(image, psf)")]
+fn convolve_psf_function<'py>(
+    py: Python<'py>,
+    image: &Bound<'py, PyAny>,
+    psf: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    dispatch_array!(image, 2, "image", convolve_psf_impl, py, psf)
+}
+
+fn convolve_psf_impl<'py, T: Scalar>(
+    image: Array2<T>,
+    py: Python<'py>,
+    psf: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let psf_array = required_typed_array2::<T>(psf, "image vs psf")?;
+    if psf_array.nrows() % 2 != 1 || psf_array.ncols() % 2 != 1 {
+        return Err(PyValueError::new_err(format!(
+            "psf must have odd dimensions (a centered PSF); got {}x{}",
+            psf_array.nrows(),
+            psf_array.ncols()
+        )));
+    }
+    let output = core_image::convolve_psf::<T>(image.view(), psf_array.view());
+    Ok(output.into_pyarray(py).into_any())
+}
+
+/// Correlate every lane along ``axis`` with a 1-D Gaussian — the grism
+/// emission-line matched filter.
+///
+/// The kernel is built with the requested ``normalization`` (``"l2"``
+/// makes the peak response the matched-filter S/N-optimal statistic).
+/// This is a correlation; a Gaussian is symmetric so it coincides with
+/// convolution. ``renormalize=False`` (the matched filter's natural
+/// mode) uses ``boundary`` for out-of-bounds taps; ``renormalize=True``
+/// uses NaN-as-missing renormalization and ``boundary`` is ignored.
+///
+/// Parameters
+/// ----------
+/// image : ndarray
+///     2-D image, dtype ``float32`` or ``float64``.
+/// sigma : float
+///     Gaussian sigma in pixels along ``axis``. Must be positive.
+/// axis : int, optional
+///     ``0`` correlates down each column, ``1`` along each row. Default
+///     ``0``.
+/// normalization : {"sum", "l2", "none"}, optional
+///     Kernel normalization. Default ``"l2"`` (matched-filter optimal).
+/// boundary : {"zero", "reflect", "nearest"}, optional
+///     Out-of-bounds handling, used only when ``renormalize=False``.
+///     Default ``"zero"``.
+/// renormalize : bool, optional
+///     When ``True``, use NaN-as-missing renormalization (out-of-bounds
+///     is missing and ``boundary`` is ignored). Default ``False``.
+///
+/// Returns
+/// -------
+/// ndarray
+///     The filtered image, same shape and dtype as ``image``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``image`` is not a 2-D float32 / float64 array, ``sigma`` is
+///     not positive, ``axis`` is not 0 or 1, or ``normalization`` /
+///     ``boundary`` is invalid.
+#[pyfunction]
+#[pyo3(name = "convolve_gaussian_axis")]
+#[pyo3(signature = (image, *, sigma, axis=0, normalization="l2", boundary="zero", renormalize=false))]
+#[pyo3(
+    text_signature = "(image, *, sigma, axis=0, normalization=\"l2\", boundary=\"zero\", renormalize=False)"
+)]
+fn convolve_gaussian_axis_function<'py>(
+    py: Python<'py>,
+    image: &Bound<'py, PyAny>,
+    sigma: f64,
+    axis: usize,
+    normalization: &str,
+    boundary: &str,
+    renormalize: bool,
+) -> PyResult<Bound<'py, PyAny>> {
+    if !sigma.is_finite() || sigma <= 0.0 {
+        return Err(PyValueError::new_err(format!(
+            "sigma must be positive, got {sigma}"
+        )));
+    }
+    let axis_enum = match axis {
+        0 => Axis(0),
+        1 => Axis(1),
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "axis must be 0 or 1, got {other}"
+            )));
+        }
+    };
+    let normalization_enum = parse_normalization(normalization)?;
+    let boundary_enum = parse_boundary(boundary)?;
+    dispatch_array!(
+        image,
+        2,
+        "image",
+        convolve_gaussian_axis_impl,
+        py,
+        sigma,
+        axis_enum,
+        normalization_enum,
+        boundary_enum,
+        renormalize
+    )
+}
+
+fn convolve_gaussian_axis_impl<'py, T: Scalar>(
+    image: Array2<T>,
+    py: Python<'py>,
+    sigma: f64,
+    axis: Axis,
+    normalization: Normalization,
+    boundary: Boundary,
+    renormalize: bool,
+) -> PyResult<Bound<'py, PyAny>> {
+    let output = core_image::convolve_gaussian_axis::<T>(
+        image.view(),
+        sigma,
+        axis,
+        normalization,
+        boundary,
+        renormalize,
+    );
+    Ok(output.into_pyarray(py).into_any())
+}
+
 pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule>) -> PyResult<()> {
     let image = PyModule::new(py, "image")?;
     image.add_function(wrap_pyfunction!(reproject_exact_function, &image)?)?;
+    image.add_function(wrap_pyfunction!(convolve_psf_function, &image)?)?;
+    image.add_function(wrap_pyfunction!(convolve_gaussian_axis_function, &image)?)?;
     parent.add_submodule(&image)?;
     let sys_modules = py.import("sys")?.getattr("modules")?;
     sys_modules.set_item("noobase._core.image", &image)?;

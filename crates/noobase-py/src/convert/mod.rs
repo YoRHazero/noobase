@@ -16,15 +16,15 @@ mod tuple;
 pub(crate) use array::{
     optional_bool_array1, optional_bool_array2, optional_companion_array2,
     optional_companion_array3, optional_f64_array2, optional_typed_array1, required_f64_array2,
-    required_typed_array1, typed_array1,
+    required_typed_array1, required_typed_array2, typed_array1,
 };
 pub(crate) use dtype::{
     Scalar, dispatch_array, dtype_mismatch_error, grid_dtype_name, is_float32_dtype, map_inner,
     to_value_error, with_grid_pair, with_inner,
 };
 pub(crate) use enums::{
-    kind_to_str, parse_combine_method, parse_convention, parse_kind, parse_residual_reweight,
-    parse_spacing, spacing_to_str,
+    kind_to_str, parse_boundary, parse_combine_method, parse_convention, parse_kind,
+    parse_lsf_spec, parse_normalization, parse_residual_reweight, parse_spacing, spacing_to_str,
 };
 pub(crate) use grid_input::{GridChannel, build_grid_from_any, coerce_to_grid, grid_channel};
 pub(crate) use tuple::{band_pair, band_triple};
