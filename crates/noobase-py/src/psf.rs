@@ -21,162 +21,19 @@
 use ::noobase::image::psf as core_psf;
 use ::noobase::image::psf::{
     BuildEpsf, BuildEpsfParams, CombineMethod, ExtendedPsf, ExtendedPsfBuilt, ExtendedPsfParams,
-    FluxBackground, ResidualReweight, RobustCombined, StitchParams,
+    FluxBackground, RobustCombined, StitchParams,
 };
 use ::noobase::image::stamp as core_stamp;
 use ::noobase::image::stamp::StampResult;
-use ndarray::{Array2, Array3};
-use numpy::{PyReadonlyArray2, PyReadonlyArray3, ToPyArray};
-use pyo3::exceptions::PyValueError;
+use ndarray::{Array2, Array3, ArrayView2};
+use numpy::ToPyArray;
 use pyo3::prelude::*;
 
-// ---------------------------------------------------------------------------
-// Boundary translation helpers
-// ---------------------------------------------------------------------------
-
-/// Every core `*Error` is a hard precondition; its `Display` is the
-/// authoritative message. Map it to `ValueError` verbatim (the noobase-py
-/// convention shared with grid/spectrum/photometry/image).
-fn to_value_error<E: std::fmt::Display>(err: E) -> PyErr {
-    PyValueError::new_err(err.to_string())
-}
-
-/// Parse the flat `combine` string + companion scalars into the core
-/// `CombineMethod` (fork 2). Mirrors the `parse_spacing` convention:
-/// unknown literal -> `ValueError`. `median` ignores the companion
-/// scalars; `clipped_mean`'s `kappa`/`max_iter` are validated by the core
-/// (`ClippedMeanInvalidParams` -> `ValueError`), not pre-checked here.
-fn parse_combine_method(
-    method: &str,
-    combine_kappa: f64,
-    combine_max_iter: usize,
-) -> PyResult<CombineMethod> {
-    match method {
-        "clipped_mean" => Ok(CombineMethod::ClippedMean {
-            kappa: combine_kappa,
-            max_iter: combine_max_iter,
-        }),
-        "median" => Ok(CombineMethod::Median),
-        other => Err(PyValueError::new_err(format!(
-            "invalid combine {other:?}; expected one of \"clipped_mean\", \"median\""
-        ))),
-    }
-}
-
-/// Parse the flat `residual_reweight` string + companion `reweight_c`
-/// into the core `ResidualReweight` (fork 3). `none` ignores `reweight_c`;
-/// `huber`/`tukey`'s `c` is validated by the core (`ParamsInvalid` ->
-/// `ValueError`), not pre-checked here.
-fn parse_residual_reweight(reweight: &str, reweight_c: f64) -> PyResult<ResidualReweight> {
-    match reweight {
-        "none" => Ok(ResidualReweight::None),
-        "huber" => Ok(ResidualReweight::Huber { c: reweight_c }),
-        "tukey" => Ok(ResidualReweight::Tukey { c: reweight_c }),
-        other => Err(PyValueError::new_err(format!(
-            "invalid residual_reweight {other:?}; expected one of \"none\", \"huber\", \"tukey\""
-        ))),
-    }
-}
-
-/// Extract an optional same-dtype companion 3-D array (`weight` /
-/// `wing_weight`). `None` / Python `None` -> `None`; a dtype mismatch
-/// with the primary data array is a `ValueError`.
-fn extract_optional_array3<T>(
-    value: Option<&Bound<'_, PyAny>>,
-    name: &str,
-    expected_dtype: &'static str,
-) -> PyResult<Option<Array3<T>>>
-where
-    T: numpy::Element + Clone,
-{
-    let Some(bound) = value else {
-        return Ok(None);
-    };
-    if bound.is_none() {
-        return Ok(None);
-    }
-    match bound.extract::<PyReadonlyArray3<'_, T>>() {
-        Ok(array) => Ok(Some(array.as_array().to_owned())),
-        Err(_) => Err(PyValueError::new_err(format!(
-            "{name} must be a 3-D numpy array of dtype {expected_dtype} (matching the data array)"
-        ))),
-    }
-}
-
-/// Extract an optional same-dtype companion 2-D array (`error`). Same
-/// contract as [`extract_optional_array3`].
-fn extract_optional_array2<T>(
-    value: Option<&Bound<'_, PyAny>>,
-    name: &str,
-    expected_dtype: &'static str,
-) -> PyResult<Option<Array2<T>>>
-where
-    T: numpy::Element + Clone,
-{
-    let Some(bound) = value else {
-        return Ok(None);
-    };
-    if bound.is_none() {
-        return Ok(None);
-    }
-    match bound.extract::<PyReadonlyArray2<'_, T>>() {
-        Ok(array) => Ok(Some(array.as_array().to_owned())),
-        Err(_) => Err(PyValueError::new_err(format!(
-            "{name} must be a 2-D numpy array of dtype {expected_dtype} (matching the cutout)"
-        ))),
-    }
-}
-
-/// Extract a required `float64` 2-D array (the non-generic model / delta
-/// arrays: `epsf` / `core` / `wing` / `delta` / `delta_init` /
-/// `wing_delta`; decision 12 -- psi / delta are always f64).
-fn extract_required_f64_array2(value: &Bound<'_, PyAny>, name: &str) -> PyResult<Array2<f64>> {
-    match value.extract::<PyReadonlyArray2<'_, f64>>() {
-        Ok(array) => Ok(array.as_array().to_owned()),
-        Err(_) => Err(PyValueError::new_err(format!(
-            "{name} must be a 2-D numpy array of dtype float64"
-        ))),
-    }
-}
-
-/// Extract an optional `float64` 2-D array (`psi_init` /
-/// `wing_confidence`; always f64).
-fn extract_optional_f64_array2(
-    value: Option<&Bound<'_, PyAny>>,
-    name: &str,
-) -> PyResult<Option<Array2<f64>>> {
-    let Some(bound) = value else {
-        return Ok(None);
-    };
-    if bound.is_none() {
-        return Ok(None);
-    }
-    match bound.extract::<PyReadonlyArray2<'_, f64>>() {
-        Ok(array) => Ok(Some(array.as_array().to_owned())),
-        Err(_) => Err(PyValueError::new_err(format!(
-            "{name} must be a 2-D numpy array of dtype float64"
-        ))),
-    }
-}
-
-/// Extract an optional `bool` 2-D mask (`true = invalid`; decision 7).
-fn extract_optional_bool_array2(
-    value: Option<&Bound<'_, PyAny>>,
-    name: &str,
-) -> PyResult<Option<Array2<bool>>> {
-    let Some(bound) = value else {
-        return Ok(None);
-    };
-    if bound.is_none() {
-        return Ok(None);
-    }
-    match bound.extract::<PyReadonlyArray2<'_, bool>>() {
-        Ok(array) => Ok(Some(array.as_array().to_owned())),
-        Err(_) => Err(PyValueError::new_err(format!(
-            "{name} must be a 2-D numpy array of dtype bool"
-        ))),
-    }
-}
+use crate::convert::{
+    Scalar, dispatch_array, optional_bool_array2, optional_companion_array2,
+    optional_companion_array3, optional_f64_array2, parse_combine_method, parse_residual_reweight,
+    required_f64_array2, to_value_error,
+};
 
 // ---------------------------------------------------------------------------
 // Output pyclasses (fork 3: a small getter pyclass per core output struct;
@@ -519,7 +376,7 @@ impl PyExtendedPsfBuilt {
 }
 
 // ---------------------------------------------------------------------------
-// Bound entry points
+// Bound entry points (thin dtype dispatch onto a single generic `*_impl`)
 // ---------------------------------------------------------------------------
 
 /// Locate an init-quality centroid in a rough cutout, pick an
@@ -584,43 +441,44 @@ fn build_stamp_function(
     max_iter: usize,
     tol: f64,
 ) -> PyResult<Option<PyStampResult>> {
-    let mask_owned = extract_optional_bool_array2(mask, "mask")?;
+    let mask_owned = optional_bool_array2(mask, "mask")?;
     let mask_view = mask_owned.as_ref().map(|array| array.view());
+    dispatch_array!(
+        cutout,
+        2,
+        "cutout",
+        build_stamp_impl,
+        stamp_size,
+        error,
+        mask_view,
+        weight_fwhm,
+        max_iter,
+        tol
+    )
+}
 
-    let result = if let Ok(cutout_f64) = cutout.extract::<PyReadonlyArray2<'_, f64>>() {
-        let cutout_owned: Array2<f64> = cutout_f64.as_array().to_owned();
-        let error_owned = extract_optional_array2::<f64>(error, "error", "float64")?;
-        let error_view = error_owned.as_ref().map(|array| array.view());
-        core_stamp::build_stamp::<f64>(
-            cutout_owned.view(),
-            stamp_size,
-            error_view,
-            mask_view,
-            weight_fwhm,
-            max_iter,
-            tol,
-        )
-        .map_err(to_value_error)?
-    } else if let Ok(cutout_f32) = cutout.extract::<PyReadonlyArray2<'_, f32>>() {
-        let cutout_owned: Array2<f32> = cutout_f32.as_array().to_owned();
-        let error_owned = extract_optional_array2::<f32>(error, "error", "float32")?;
-        let error_view = error_owned.as_ref().map(|array| array.view());
-        core_stamp::build_stamp::<f32>(
-            cutout_owned.view(),
-            stamp_size,
-            error_view,
-            mask_view,
-            weight_fwhm,
-            max_iter,
-            tol,
-        )
-        .map_err(to_value_error)?
-    } else {
-        return Err(PyValueError::new_err(
-            "cutout must be a 2-D numpy array of dtype float32 or float64",
-        ));
-    };
-
+#[allow(clippy::too_many_arguments)]
+fn build_stamp_impl<T: Scalar>(
+    cutout: Array2<T>,
+    stamp_size: usize,
+    error: Option<&Bound<'_, PyAny>>,
+    mask_view: Option<ArrayView2<'_, bool>>,
+    weight_fwhm: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Option<PyStampResult>> {
+    let error_owned = optional_companion_array2::<T>(error, "error")?;
+    let error_view = error_owned.as_ref().map(|array| array.view());
+    let result = core_stamp::build_stamp::<T>(
+        cutout.view(),
+        stamp_size,
+        error_view,
+        mask_view,
+        weight_fwhm,
+        max_iter,
+        tol,
+    )
+    .map_err(to_value_error)?;
     Ok(result.map(|inner| PyStampResult { inner }))
 }
 
@@ -681,25 +539,25 @@ fn robust_combine_function(
     combine_max_iter: usize,
 ) -> PyResult<PyRobustCombined> {
     let combine_method = parse_combine_method(method, combine_kappa, combine_max_iter)?;
+    dispatch_array!(
+        stack,
+        3,
+        "stack",
+        robust_combine_impl,
+        weight,
+        combine_method
+    )
+}
 
-    let inner = if let Ok(stack_f64) = stack.extract::<PyReadonlyArray3<'_, f64>>() {
-        let stack_owned: Array3<f64> = stack_f64.as_array().to_owned();
-        let weight_owned = extract_optional_array3::<f64>(weight, "weight", "float64")?;
-        let weight_view = weight_owned.as_ref().map(|array| array.view());
-        core_psf::robust_combine::<f64>(stack_owned.view(), weight_view, combine_method)
-            .map_err(to_value_error)?
-    } else if let Ok(stack_f32) = stack.extract::<PyReadonlyArray3<'_, f32>>() {
-        let stack_owned: Array3<f32> = stack_f32.as_array().to_owned();
-        let weight_owned = extract_optional_array3::<f32>(weight, "weight", "float32")?;
-        let weight_view = weight_owned.as_ref().map(|array| array.view());
-        core_psf::robust_combine::<f32>(stack_owned.view(), weight_view, combine_method)
-            .map_err(to_value_error)?
-    } else {
-        return Err(PyValueError::new_err(
-            "stack must be a 3-D numpy array of dtype float32 or float64",
-        ));
-    };
-
+fn robust_combine_impl<T: Scalar>(
+    stack: Array3<T>,
+    weight: Option<&Bound<'_, PyAny>>,
+    method: CombineMethod,
+) -> PyResult<PyRobustCombined> {
+    let weight_owned = optional_companion_array3::<T>(weight, "weight")?;
+    let weight_view = weight_owned.as_ref().map(|array| array.view());
+    let inner = core_psf::robust_combine::<T>(stack.view(), weight_view, method)
+        .map_err(to_value_error)?;
     Ok(PyRobustCombined { inner })
 }
 
@@ -748,39 +606,37 @@ fn solve_flux_background_function(
     delta: &Bound<'_, PyAny>,
     weight: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyFluxBackground> {
-    let epsf_owned = extract_required_f64_array2(epsf, "epsf")?;
-    let delta_owned = extract_required_f64_array2(delta, "delta")?;
+    let epsf_owned = required_f64_array2(epsf, "epsf")?;
+    let delta_owned = required_f64_array2(delta, "delta")?;
+    dispatch_array!(
+        data,
+        3,
+        "data",
+        solve_flux_background_impl,
+        epsf_owned.view(),
+        oversample,
+        delta_owned.view(),
+        weight
+    )
+}
 
-    let inner = if let Ok(data_f64) = data.extract::<PyReadonlyArray3<'_, f64>>() {
-        let data_owned: Array3<f64> = data_f64.as_array().to_owned();
-        let weight_owned = extract_optional_array3::<f64>(weight, "weight", "float64")?;
-        let weight_view = weight_owned.as_ref().map(|array| array.view());
-        core_psf::solve_flux_background::<f64>(
-            epsf_owned.view(),
-            oversample,
-            data_owned.view(),
-            weight_view,
-            delta_owned.view(),
-        )
-        .map_err(to_value_error)?
-    } else if let Ok(data_f32) = data.extract::<PyReadonlyArray3<'_, f32>>() {
-        let data_owned: Array3<f32> = data_f32.as_array().to_owned();
-        let weight_owned = extract_optional_array3::<f32>(weight, "weight", "float32")?;
-        let weight_view = weight_owned.as_ref().map(|array| array.view());
-        core_psf::solve_flux_background::<f32>(
-            epsf_owned.view(),
-            oversample,
-            data_owned.view(),
-            weight_view,
-            delta_owned.view(),
-        )
-        .map_err(to_value_error)?
-    } else {
-        return Err(PyValueError::new_err(
-            "data must be a 3-D numpy array of dtype float32 or float64",
-        ));
-    };
-
+fn solve_flux_background_impl<T: Scalar>(
+    data: Array3<T>,
+    epsf: ArrayView2<'_, f64>,
+    oversample: usize,
+    delta: ArrayView2<'_, f64>,
+    weight: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyFluxBackground> {
+    let weight_owned = optional_companion_array3::<T>(weight, "weight")?;
+    let weight_view = weight_owned.as_ref().map(|array| array.view());
+    let inner = core_psf::solve_flux_background::<T>(
+        epsf,
+        oversample,
+        data.view(),
+        weight_view,
+        delta,
+    )
+    .map_err(to_value_error)?;
     Ok(PyFluxBackground { inner })
 }
 
@@ -876,8 +732,8 @@ fn build_epsf_function(
     nuisance_max_iter: usize,
     nuisance_tol: f64,
 ) -> PyResult<PyBuildEpsf> {
-    let delta_init_owned = extract_required_f64_array2(delta_init, "delta_init")?;
-    let psi_init_owned = extract_optional_f64_array2(psi_init, "psi_init")?;
+    let delta_init_owned = required_f64_array2(delta_init, "delta_init")?;
+    let psi_init_owned = optional_f64_array2(psi_init, "psi_init")?;
     let psi_init_view = psi_init_owned.as_ref().map(|array| array.view());
     let params = BuildEpsfParams {
         max_iter,
@@ -887,39 +743,38 @@ fn build_epsf_function(
         nuisance_max_iter,
         nuisance_tol,
     };
+    dispatch_array!(
+        data,
+        3,
+        "data",
+        build_epsf_impl,
+        weight,
+        delta_init_owned.view(),
+        oversample,
+        psi_init_view,
+        params
+    )
+}
 
-    let inner = if let Ok(data_f64) = data.extract::<PyReadonlyArray3<'_, f64>>() {
-        let data_owned: Array3<f64> = data_f64.as_array().to_owned();
-        let weight_owned = extract_optional_array3::<f64>(weight, "weight", "float64")?;
-        let weight_view = weight_owned.as_ref().map(|array| array.view());
-        core_psf::build_epsf::<f64>(
-            data_owned.view(),
-            weight_view,
-            delta_init_owned.view(),
-            oversample,
-            psi_init_view,
-            params,
-        )
-        .map_err(to_value_error)?
-    } else if let Ok(data_f32) = data.extract::<PyReadonlyArray3<'_, f32>>() {
-        let data_owned: Array3<f32> = data_f32.as_array().to_owned();
-        let weight_owned = extract_optional_array3::<f32>(weight, "weight", "float32")?;
-        let weight_view = weight_owned.as_ref().map(|array| array.view());
-        core_psf::build_epsf::<f32>(
-            data_owned.view(),
-            weight_view,
-            delta_init_owned.view(),
-            oversample,
-            psi_init_view,
-            params,
-        )
-        .map_err(to_value_error)?
-    } else {
-        return Err(PyValueError::new_err(
-            "data must be a 3-D numpy array of dtype float32 or float64",
-        ));
-    };
-
+fn build_epsf_impl<T: Scalar>(
+    data: Array3<T>,
+    weight: Option<&Bound<'_, PyAny>>,
+    delta_init: ArrayView2<'_, f64>,
+    oversample: usize,
+    psi_init_view: Option<ArrayView2<'_, f64>>,
+    params: BuildEpsfParams,
+) -> PyResult<PyBuildEpsf> {
+    let weight_owned = optional_companion_array3::<T>(weight, "weight")?;
+    let weight_view = weight_owned.as_ref().map(|array| array.view());
+    let inner = core_psf::build_epsf::<T>(
+        data.view(),
+        weight_view,
+        delta_init,
+        oversample,
+        psi_init_view,
+        params,
+    )
+    .map_err(to_value_error)?;
     Ok(PyBuildEpsf { inner })
 }
 
@@ -987,9 +842,9 @@ fn stitch_psf_function(
     feather_width: f64,
     ee_aperture_radius: f64,
 ) -> PyResult<PyExtendedPsf> {
-    let core_owned = extract_required_f64_array2(core, "core")?;
-    let wing_owned = extract_required_f64_array2(wing, "wing")?;
-    let confidence_owned = extract_optional_f64_array2(wing_confidence, "wing_confidence")?;
+    let core_owned = required_f64_array2(core, "core")?;
+    let wing_owned = required_f64_array2(wing, "wing")?;
+    let confidence_owned = optional_f64_array2(wing_confidence, "wing_confidence")?;
     let confidence_view = confidence_owned.as_ref().map(|array| array.view());
     let params = StitchParams {
         match_radius,
@@ -1103,8 +958,8 @@ fn build_extended_psf_function(
     scale_aperture_radius: f64,
     scale_background_annulus: (f64, f64),
 ) -> PyResult<PyExtendedPsfBuilt> {
-    let wing_delta_owned = extract_required_f64_array2(wing_delta, "wing_delta")?;
-    let core_owned = extract_required_f64_array2(core, "core")?;
+    let wing_delta_owned = required_f64_array2(wing_delta, "wing_delta")?;
+    let core_owned = required_f64_array2(core, "core")?;
     let params = ExtendedPsfParams {
         stitch: StitchParams {
             match_radius,
@@ -1115,39 +970,38 @@ fn build_extended_psf_function(
         scale_aperture_radius,
         scale_background_annulus,
     };
+    dispatch_array!(
+        wing_data,
+        3,
+        "wing_data",
+        build_extended_psf_impl,
+        wing_weight,
+        wing_delta_owned.view(),
+        core_owned.view(),
+        oversample,
+        params
+    )
+}
 
-    let inner = if let Ok(wing_data_f64) = wing_data.extract::<PyReadonlyArray3<'_, f64>>() {
-        let wing_data_owned: Array3<f64> = wing_data_f64.as_array().to_owned();
-        let weight_owned = extract_optional_array3::<f64>(wing_weight, "wing_weight", "float64")?;
-        let weight_view = weight_owned.as_ref().map(|array| array.view());
-        core_psf::build_extended_psf::<f64>(
-            wing_data_owned.view(),
-            weight_view,
-            wing_delta_owned.view(),
-            core_owned.view(),
-            oversample,
-            params,
-        )
-        .map_err(to_value_error)?
-    } else if let Ok(wing_data_f32) = wing_data.extract::<PyReadonlyArray3<'_, f32>>() {
-        let wing_data_owned: Array3<f32> = wing_data_f32.as_array().to_owned();
-        let weight_owned = extract_optional_array3::<f32>(wing_weight, "wing_weight", "float32")?;
-        let weight_view = weight_owned.as_ref().map(|array| array.view());
-        core_psf::build_extended_psf::<f32>(
-            wing_data_owned.view(),
-            weight_view,
-            wing_delta_owned.view(),
-            core_owned.view(),
-            oversample,
-            params,
-        )
-        .map_err(to_value_error)?
-    } else {
-        return Err(PyValueError::new_err(
-            "wing_data must be a 3-D numpy array of dtype float32 or float64",
-        ));
-    };
-
+fn build_extended_psf_impl<T: Scalar>(
+    wing_data: Array3<T>,
+    wing_weight: Option<&Bound<'_, PyAny>>,
+    wing_delta: ArrayView2<'_, f64>,
+    core: ArrayView2<'_, f64>,
+    oversample: usize,
+    params: ExtendedPsfParams,
+) -> PyResult<PyExtendedPsfBuilt> {
+    let weight_owned = optional_companion_array3::<T>(wing_weight, "wing_weight")?;
+    let weight_view = weight_owned.as_ref().map(|array| array.view());
+    let inner = core_psf::build_extended_psf::<T>(
+        wing_data.view(),
+        weight_view,
+        wing_delta,
+        core,
+        oversample,
+        params,
+    )
+    .map_err(to_value_error)?;
     Ok(PyExtendedPsfBuilt { inner })
 }
 

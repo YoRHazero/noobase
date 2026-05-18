@@ -1,16 +1,11 @@
 use ::noobase::image as core_image;
-use ::noobase::image::ReprojectError;
 use ndarray::{Array2, ArrayView3};
 use numpy::{IntoPyArray, PyReadonlyArray3};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
-use crate::convert::{Scalar, dispatch_array};
-
-fn map_reproject_error(err: ReprojectError) -> PyErr {
-    PyValueError::new_err(err.to_string())
-}
+use crate::convert::{Scalar, dispatch_array, to_value_error};
 
 /// Surface-brightness-conserving exact reprojection of a 2-D image.
 ///
@@ -117,7 +112,7 @@ fn reproject_exact_impl<'py, T: Scalar>(
     corners: ArrayView3<'_, f64>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let output =
-        core_image::reproject_exact::<T>(image.view(), corners).map_err(map_reproject_error)?;
+        core_image::reproject_exact::<T>(image.view(), corners).map_err(to_value_error)?;
     let tuple = PyTuple::new(
         py,
         [
