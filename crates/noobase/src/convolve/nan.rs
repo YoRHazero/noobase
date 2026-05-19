@@ -164,7 +164,7 @@ fn renorm_row<T: Float>(
 /// missing-data correction along one axis). Lanes are independent and
 /// evaluated sequentially, consistent with `conv_axis`.
 ///
-/// Panics if `kernel` is empty.
+/// Panics if `kernel` is empty or if `axis` is not `Axis(0)` or `Axis(1)`.
 pub fn conv_axis_renorm<T: Float>(
     image: ArrayView2<T>,
     kernel: ArrayView1<T>,

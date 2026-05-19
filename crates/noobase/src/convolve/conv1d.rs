@@ -58,7 +58,7 @@ pub fn conv1d<T: Float>(
 /// output has the same shape as `image` and inherits the NaN-naive
 /// correlation semantics of [`conv1d`].
 ///
-/// Panics if `kernel` is empty.
+/// Panics if `kernel` is empty or if `axis` is not `Axis(0)` or `Axis(1)`.
 pub fn conv_axis<T: Float>(
     image: ArrayView2<T>,
     kernel: ArrayView1<T>,

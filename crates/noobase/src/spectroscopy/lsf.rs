@@ -23,9 +23,13 @@
 //! - **General path** — anything else (linear, irregular, non-uniform
 //!   `Log`). Each output pixel integrates an erf Gaussian of its own
 //!   `σ_λ(λ_i)` over the actual (possibly non-uniform) bins and divides
-//!   by the in-window weight. Exact and flux-conserving; it deliberately
-//!   does *not* go through a `linear → log → linear` rebin round trip
-//!   (which would irreversibly smear the red end before convolving).
+//!   by the in-window weight. This preserves a constant template and is
+//!   flux-conserving for well-contained features; at the spectrum edges,
+//!   the per-output renormalization avoids edge darkening but does not
+//!   preserve the total integrated flux of a truncated feature. It
+//!   deliberately does *not* go through a `linear → log → linear` rebin
+//!   round trip (which would irreversibly smear the red end before
+//!   convolving).
 //!
 //! `is_uniform` is only the fast-path *discriminant*, never a rejection
 //! gate: `Spacing::Log` is a midpoint convention and does not by itself
@@ -96,8 +100,11 @@ impl<T: Float> Spectrum<T> {
     /// The input is treated as a noise-free model: only `flux` is
     /// convolved and the output carries no `error`/`mask`. The
     /// wavelength grid is returned unchanged (same values, spacing, and
-    /// kind). Flux is conserved, including at the spectrum edges (each
-    /// output pixel is renormalized by the in-window kernel weight).
+    /// kind). Constant templates remain constant, including at the
+    /// spectrum edges, because each output pixel is renormalized by the
+    /// in-window kernel weight. Total integrated flux is conserved for
+    /// well-contained features; a feature truncated by the spectrum edge is
+    /// edge-renormalized locally rather than globally flux-conserved.
     ///
     /// Works for *any* wavelength grid (see the module docs for the
     /// fast/general path selection). Precondition: wavelengths are
@@ -205,7 +212,8 @@ impl<T: Float> Spectrum<T> {
     /// General path: per output pixel, integrate an erf Gaussian of that
     /// pixel's own `σ_λ(λ_i) = σ_lnλ · λ_i` over the actual bins and
     /// normalize by the in-window weight. Exact for any (non-uniform)
-    /// grid and flux-conserving including at the edges.
+    /// grid, constant-preserving at the edges, and flux-conserving for
+    /// well-contained features.
     fn lsf_general_path(&self, sigma_ln_lambda: f64, centers: ndarray::ArrayView1<T>) -> Array1<T> {
         let bin_count = centers.len();
         let wavelength = self.wavelength();

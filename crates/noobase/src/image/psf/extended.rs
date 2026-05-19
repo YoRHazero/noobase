@@ -98,9 +98,9 @@
 //!   per-pixel weight (`Option`; `None` = unit), mask polarity folded
 //!   into `weight = 0` by the caller (decision 7). The core native side
 //!   `s` is recovered from `core.shape()` / `oversample` (like
-//!   `render`/`nuisance`, never passed separately); the wing `(H, W)` is
-//!   its own native large support (independent of `s`, larger than the
-//!   core stamp). The core center `(os*s - 1)/2` follows `render`
+//!   `render`/`nuisance`, never passed separately); the square wing
+//!   `(w, w)` is its own native large support (independent of `s`, larger
+//!   than the core stamp). The core center `(os*s - 1)/2` follows `render`
 //!   (decision 12); the wing is centered. `robust_combine` already
 //!   parallelizes over pixels and `solve_flux_background` over `M`; the
 //!   orchestrator only orchestrates. Preconditions are checked in
@@ -284,7 +284,7 @@ pub struct ExtendedPsf {
     pub core: Array2<f64>,
     /// The oversample factor `os` (the meta-info linking the two grids).
     pub oversample: usize,
-    /// `(H, W)` native wing: scalar-matched to the core at
+    /// `(w, w)` native square wing: scalar-matched to the core at
     /// `match_radius`, raised-cosine feathered (so ~0 in the core
     /// region), and EE-normalized.
     pub wing: Array2<f64>,
@@ -342,6 +342,8 @@ pub enum StitchError {
     DerivedStampSizeEven { stamp_size: usize },
     #[error("wing must have odd dimensions to have a defined center; got ({rows}, {cols})")]
     WingNotOdd { rows: usize, cols: usize },
+    #[error("wing must be square; got ({rows}, {cols})")]
+    WingNotSquare { rows: usize, cols: usize },
     #[error("wing_confidence shape {confidence:?} must equal wing shape {wing:?}")]
     WingConfidenceShapeMismatch {
         confidence: (usize, usize),
@@ -378,6 +380,8 @@ pub enum ExtendedPsfError {
         "wing_data must have odd spatial dimensions to have a defined center; got ({rows}, {cols})"
     )]
     WingNotOdd { rows: usize, cols: usize },
+    #[error("wing_data spatial dimensions must be square; got ({rows}, {cols})")]
+    WingNotSquare { rows: usize, cols: usize },
     #[error(
         "batch dimensions disagree: wing_data shape {wing_data:?} must be (M, H, W) and wing_delta shape {wing_delta:?} must be (M, 2)"
     )]
@@ -712,9 +716,9 @@ fn aperture_photometry_scale(
 ///   (unit-volume gauged). `s` is recovered from `core.shape()` /
 ///   `oversample`.
 /// - `oversample`: `os`, odd (decision 1/12).
-/// - `wing`: `(H, W)` native large-support wing, centered; `H`, `W`
+/// - `wing`: `(w, w)` native large-support square wing, centered; `w`
 ///   odd. An all-`NaN` (sentinel) wing yields a pure-core result.
-/// - `wing_confidence`: optional `(H, W)` per-pixel certainty (e.g.
+/// - `wing_confidence`: optional `(w, w)` per-pixel certainty (e.g.
 ///   `robust_combine`'s combined weight); `None` is uniform. It only
 ///   weights the seam scalar-match.
 /// - `params`: the stitch geometry.
@@ -728,7 +732,7 @@ fn aperture_photometry_scale(
 ///
 /// Returns a [`StitchError`] for the shape/parity preconditions (odd
 /// `oversample`, square `core`, `oversample` dividing the core side, odd
-/// derived `stamp_size`, odd `wing` dims, a `Some` `wing_confidence`
+/// derived `stamp_size`, odd and square `wing` dims, a `Some` `wing_confidence`
 /// matching `wing`) checked first, then `StitchParamsInvalid` when the
 /// geometry is infeasible.
 pub fn stitch_psf(
@@ -744,6 +748,12 @@ pub fn stitch_psf(
     let wing_cols = wing.shape()[1];
     if wing_rows.is_multiple_of(2) || wing_cols.is_multiple_of(2) {
         return Err(StitchError::WingNotOdd {
+            rows: wing_rows,
+            cols: wing_cols,
+        });
+    }
+    if wing_rows != wing_cols {
+        return Err(StitchError::WingNotSquare {
             rows: wing_rows,
             cols: wing_cols,
         });
@@ -895,9 +905,9 @@ fn stitch_core_and_wing(
 ///
 /// # Parameters
 ///
-/// - `wing_data`: `(M, H, W)` caller-aligned bright-star native stamps.
-///   May be `f32` or `f64`; upcast to `f64` internally.
-/// - `wing_weight`: optional `(M, H, W)` complete per-pixel base weight;
+/// - `wing_data`: `(M, w, w)` caller-aligned bright-star native square
+///   stamps. May be `f32` or `f64`; upcast to `f64` internally.
+/// - `wing_weight`: optional `(M, w, w)` complete per-pixel base weight;
 ///   `None` is unit weight (decision 7). A non-finite / non-positive
 ///   pixel weight excludes that pixel (folds in the `true = invalid`
 ///   mask).
@@ -919,8 +929,8 @@ fn stitch_core_and_wing(
 ///
 /// Returns an [`ExtendedPsfError`] for the shape/parity preconditions
 /// (odd `oversample`, square `core`, `oversample` dividing the core
-/// side, odd derived `stamp_size`, odd `wing_data` dims, `wing_data`
-/// being `(M, H, W)` with `wing_delta` `(M, 2)`, a `Some` `wing_weight`
+/// side, odd derived `stamp_size`, odd and square `wing_data` dims,
+/// `wing_data` being `(M, w, w)` with `wing_delta` `(M, 2)`, a `Some` `wing_weight`
 /// matching `wing_data`) checked first, then `ParamsInvalid`.
 pub fn build_extended_psf<T: Float>(
     wing_data: ArrayView3<T>,
@@ -940,6 +950,12 @@ pub fn build_extended_psf<T: Float>(
     let wing_cols = wing_data.shape()[2];
     if wing_rows.is_multiple_of(2) || wing_cols.is_multiple_of(2) {
         return Err(ExtendedPsfError::WingNotOdd {
+            rows: wing_rows,
+            cols: wing_cols,
+        });
+    }
+    if wing_rows != wing_cols {
+        return Err(ExtendedPsfError::WingNotSquare {
             rows: wing_rows,
             cols: wing_cols,
         });
@@ -1523,6 +1539,19 @@ mod tests {
             stitch_psf(good_core.view(), 5, even_wing.view(), None, good.clone()).unwrap_err(),
             StitchError::WingNotOdd { rows: 60, cols: 61 }
         );
+        // WingNotSquare.
+        let rectangular_wing = Array2::<f64>::zeros((59, 61));
+        assert_eq!(
+            stitch_psf(
+                good_core.view(),
+                5,
+                rectangular_wing.view(),
+                None,
+                good.clone()
+            )
+            .unwrap_err(),
+            StitchError::WingNotSquare { rows: 59, cols: 61 }
+        );
         // WingConfidenceShapeMismatch.
         let bad_conf = Array2::<f64>::zeros((59, 61));
         assert_eq!(
@@ -1594,7 +1623,7 @@ mod tests {
     // --- build_extended_psf ---
 
     /// Synthesize bright-star stamps from a known truth: the whole
-    /// `(H, W)` stamp is `flux * truth_native(dr, dc) + background`. On
+    /// `(w, w)` stamp is `flux * truth_native(dr, dc) + background`. On
     /// the central window this is exactly `flux * core_native + bg` (the
     /// Phase 5 solve recovers `flux`/`bg`), while the analytic profile
     /// gives the wing region real signal (the zero-padded
@@ -2313,6 +2342,20 @@ mod tests {
             )
             .unwrap_err(),
             ExtendedPsfError::WingNotOdd { rows: 60, cols: 61 }
+        );
+        // WingNotSquare.
+        let rectangular_wing = Array3::<f64>::zeros((3, 59, 61));
+        assert_eq!(
+            build_extended_psf(
+                rectangular_wing.view(),
+                None,
+                delta.view(),
+                core.view(),
+                5,
+                good.clone()
+            )
+            .unwrap_err(),
+            ExtendedPsfError::WingNotSquare { rows: 59, cols: 61 }
         );
         // BatchLengthMismatch: delta not (M, 2).
         let bad_delta = Array2::<f64>::zeros((2, 2));

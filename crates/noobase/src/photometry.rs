@@ -57,9 +57,10 @@ pub enum PhotometryError {
 /// `coverage` is the fraction of the filter's transmission integral that is
 /// probed by the spectrum:
 /// `coverage = (integral over spectrum ∩ filter range) / (integral over full filter range)`,
-/// using the same weighting convention as the flux integral. A value below 1.0
-/// indicates the spectrum does not span the full filter, and the returned
-/// `band_flux` is biased low. SED-fitting callers should threshold on this
+/// using the same weighting convention as the flux integral. The returned
+/// `band_flux` is normalized over the covered overlap only; when coverage is
+/// below 1.0 it is therefore a partial-band estimate whose bias depends on the
+/// unobserved SED/filter region. SED-fitting callers should threshold on this
 /// (for example, require coverage > 0.999).
 ///
 /// # Error propagation

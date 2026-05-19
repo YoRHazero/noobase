@@ -117,7 +117,8 @@ pub enum ReprojectError {
 ///
 /// # Returns
 ///
-/// `(image_out, weight)` both shape `(H_out, W_out)` and dtype `f64`.
+/// [`ReprojectExactOutput`] containing `image`, `footprint`, and `weight`,
+/// each with shape `(H_out, W_out)` and dtype `f64`.
 ///
 /// # Errors
 ///

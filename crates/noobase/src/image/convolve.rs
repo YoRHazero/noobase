@@ -1,9 +1,14 @@
 //! Image-domain convolution entry points: a fixed 2-D PSF (req2) and an
 //! along-axis 1-D Gaussian matched filter for grism line search (req3).
 //!
-//! Both are thin domain wrappers over the `convolve` layer. They follow
-//! the image subsystem's single NaN convention — NaN (and ±inf) is
-//! missing data, exactly as `image::reproject_exact` (ROADMAP D9).
+//! Both are thin domain wrappers over the `convolve` layer. The image
+//! subsystem's missing-data convention — NaN (and ±inf) is missing data,
+//! exactly as `image::reproject_exact` (ROADMAP D9) — applies to
+//! [`convolve_psf`] and to [`convolve_gaussian_axis`] when
+//! `renormalize = true`. With `renormalize = false`,
+//! `convolve_gaussian_axis` intentionally uses the bare matched-filter
+//! correlation path, so non-finite samples follow ordinary floating-point
+//! propagation instead of being excluded.
 
 use ndarray::{Array2, ArrayView2, Axis};
 
@@ -83,7 +88,8 @@ pub fn convolve_psf<T: Float>(image: ArrayView2<T>, psf: ArrayView2<T>) -> Array
 /// Out of scope here; a caller forms `S/N = corr / sqrt(conv(variance,
 /// kernel²))` itself.
 ///
-/// Panics if `sigma <= 0` (via [`gaussian1d`]).
+/// Panics if `sigma <= 0` (via [`gaussian1d`]) or if `axis` is not
+/// `Axis(0)` or `Axis(1)`.
 pub fn convolve_gaussian_axis<T: Float>(
     image: ArrayView2<T>,
     sigma: f64,
