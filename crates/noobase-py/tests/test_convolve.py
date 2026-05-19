@@ -30,7 +30,7 @@ TOLERANCE = 1e-5
 def test_convolve_lsf_constant_template_is_conserved(dtype, kwargs):
     grid = noobase.Grid.logspace(4000.0, 7000.0, 256, dtype=dtype)
     flux = np.full(256, 3.5, dtype=dtype)
-    spectrum = noobase.Spectrum(wavelength=grid, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=grid, flux=flux)
     out = spectrum.convolve_lsf(**kwargs)
     assert out.dtype == np.dtype(dtype)
     np.testing.assert_allclose(out.flux, 3.5, rtol=TOLERANCE)
@@ -44,7 +44,7 @@ def test_convolve_lsf_constant_template_is_conserved(dtype, kwargs):
 def test_convolve_lsf_general_path_linear_grid(dtype):
     wavelength = np.linspace(4000.0, 7000.0, 200, dtype=dtype)
     flux = np.full(200, -1.5, dtype=dtype)
-    spectrum = noobase.Spectrum(
+    spectrum = noobase.spectroscopy.Spectrum(
         wavelength=wavelength, flux=flux, spacing="linear", kind="centers"
     )
     out = spectrum.convolve_lsf(spec="constant_r", resolving_power=3000.0)
@@ -54,10 +54,10 @@ def test_convolve_lsf_general_path_linear_grid(dtype):
 def test_convolve_lsf_rejects_error_or_mask():
     grid = noobase.Grid.logspace(4000.0, 7000.0, 32, dtype=np.float64)
     flux = np.ones(32)
-    with_error = noobase.Spectrum(wavelength=grid, flux=flux, error=np.full(32, 0.1))
+    with_error = noobase.spectroscopy.Spectrum(wavelength=grid, flux=flux, error=np.full(32, 0.1))
     with pytest.raises(ValueError, match="noise-free templates"):
         with_error.convolve_lsf(spec="constant_r", resolving_power=2000.0)
-    with_mask = noobase.Spectrum(
+    with_mask = noobase.spectroscopy.Spectrum(
         wavelength=grid, flux=flux, mask=np.zeros(32, dtype=bool)
     )
     with pytest.raises(ValueError, match="noise-free templates"):
@@ -66,7 +66,7 @@ def test_convolve_lsf_rejects_error_or_mask():
 
 def test_convolve_lsf_invalid_resolution():
     grid = noobase.Grid.logspace(4000.0, 7000.0, 16, dtype=np.float64)
-    spectrum = noobase.Spectrum(wavelength=grid, flux=np.ones(16))
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=grid, flux=np.ones(16))
     with pytest.raises(ValueError, match="resolution must be positive"):
         spectrum.convolve_lsf(spec="constant_r", resolving_power=0.0)
     with pytest.raises(ValueError, match="resolution must be positive"):
@@ -77,7 +77,7 @@ def test_convolve_lsf_invalid_resolution():
 
 def test_convolve_lsf_invalid_spec_and_missing_companions():
     grid = noobase.Grid.logspace(4000.0, 7000.0, 16, dtype=np.float64)
-    spectrum = noobase.Spectrum(wavelength=grid, flux=np.ones(16))
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=grid, flux=np.ones(16))
     with pytest.raises(ValueError, match="invalid spec"):
         spectrum.convolve_lsf(spec="bogus")
     with pytest.raises(ValueError, match="resolving_power is required"):

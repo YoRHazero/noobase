@@ -422,7 +422,8 @@ fn apply_impl<'py, T: Scalar>(
 }
 
 pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule>) -> PyResult<()> {
-    let photometry = PyModule::new(py, "photometry")?;
+    let photometry = PyModule::new(py, "noobase._core.photometry")?;
+    photometry.setattr("__package__", "noobase._core")?;
     photometry.add_class::<PySyntheticOperator>()?;
     photometry.add_function(wrap_pyfunction!(synthetic_function, &photometry)?)?;
     parent.add_submodule(&photometry)?;

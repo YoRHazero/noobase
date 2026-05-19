@@ -17,5 +17,6 @@ members = ["crates/noobase-py"]
 [dependency-groups]
 dev = ["maturin>=1.8,<2", "pytest>=8"]
 docs = [
+    "mkdocstrings-python>=2.0.3",
     "zensical>=0.0.43",
 ]

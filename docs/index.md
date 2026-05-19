@@ -1,173 +1,58 @@
----
-icon: lucide/rocket
----
+# noobase
 
-# Get started
+Foundational pure-function utilities for astronomy analysis. The package has a
+Rust core and Python bindings, with a focus on deterministic numerical kernels
+for spectra, photometry, image reprojection, convolution, and PSF construction.
 
-For full documentation visit [zensical.org](https://zensical.org/docs/).
+!!! warning "Pre-1.0"
 
-## Commands
+    noobase is pre-1.0. Public APIs may change between minor versions.
 
-* [`zensical new`][new] - Create a new project
-* [`zensical serve`][serve] - Start local web server
-* [`zensical build`][build] - Build your site
+## Install
 
-  [new]: https://zensical.org/docs/usage/new/
-  [serve]: https://zensical.org/docs/usage/preview/
-  [build]: https://zensical.org/docs/usage/build/
+Python:
 
-## Examples
-
-### Admonitions
-
-> Go to [documentation](https://zensical.org/docs/authoring/admonitions/)
-
-!!! note
-
-    This is a **note** admonition. Use it to provide helpful information.
-
-!!! warning
-
-    This is a **warning** admonition. Be careful!
-
-### Details
-
-> Go to [documentation](https://zensical.org/docs/authoring/admonitions/#collapsible-blocks)
-
-??? info "Click to expand for more info"
-
-    This content is hidden until you click to expand it.
-    Great for FAQs or long explanations.
-
-## Code Blocks
-
-> Go to [documentation](https://zensical.org/docs/authoring/code-blocks/)
-
-``` python hl_lines="2" title="Code blocks"
-def greet(name):
-    print(f"Hello, {name}!") # (1)!
-
-greet("Python")
+```bash
+uv add noobase
 ```
 
-1.  > Go to [documentation](https://zensical.org/docs/authoring/code-blocks/#code-annotations)
+Rust:
 
-    Code annotations allow to attach notes to lines of code.
-
-Code can also be highlighted inline: `#!python print("Hello, Python!")`.
-
-## Content tabs
-
-> Go to [documentation](https://zensical.org/docs/authoring/content-tabs/)
-
-=== "Python"
-
-    ``` python
-    print("Hello from Python!")
-    ```
-
-=== "Rust"
-
-    ``` rs
-    println!("Hello from Rust!");
-    ```
-
-## Diagrams
-
-> Go to [documentation](https://zensical.org/docs/authoring/diagrams/)
-
-``` mermaid
-graph LR
-  A[Start] --> B{Error?};
-  B -->|Yes| C[Hmm...];
-  C --> D[Debug];
-  D --> B;
-  B ---->|No| E[Yay!];
+```toml
+[dependencies]
+noobase = { git = "https://github.com/YoRHazero/noobase.git", tag = "v0.0.2" }
 ```
 
-## Footnotes
+## Python Quick Start
 
-> Go to [documentation](https://zensical.org/docs/authoring/footnotes/)
+```python
+import numpy as np
+import noobase
 
-Here's a sentence with a footnote.[^1]
+wavelength = np.linspace(1.0, 5.0, 200)
+flux = np.exp(-((wavelength - 3.0) ** 2) / 0.5)
+error = 0.01 * np.ones_like(flux)
 
-Hover it, to see a tooltip.
+spectrum = noobase.spectroscopy.Spectrum(
+    wavelength=wavelength,
+    flux=flux,
+    error=error,
+    spacing="linear",
+    kind="centers",
+)
 
-[^1]: This is the footnote.
+target = np.linspace(1.0, 5.0, 40)
+rebinned = spectrum.rebin(target=target, spacing="linear", kind="centers")
+```
 
+## API Reference
 
-## Formatting
+The Python API reference is generated from runtime docstrings exposed by the
+PyO3 bindings.
 
-> Go to [documentation](https://zensical.org/docs/authoring/formatting/)
-
-- ==This was marked (highlight)==
-- ^^This was inserted (underline)^^
-- ~~This was deleted (strikethrough)~~
-- H~2~O
-- A^T^A
-- ++ctrl+alt+del++
-
-## Icons, Emojis
-
-> Go to [documentation](https://zensical.org/docs/authoring/icons-emojis/)
-
-* :sparkles: `:sparkles:`
-* :rocket: `:rocket:`
-* :tada: `:tada:`
-* :memo: `:memo:`
-* :eyes: `:eyes:`
-
-## Maths
-
-> Go to [documentation](https://zensical.org/docs/authoring/math/)
-
-$$
-\cos x=\sum_{k=0}^{\infty}\frac{(-1)^k}{(2k)!}x^{2k}
-$$
-
-!!! warning "Needs configuration"
-    Note that MathJax is included via a `script` tag on this page and is not
-    configured in the generated default configuration to avoid including it
-    in a pages that do not need it. See the documentation for details on how
-    to configure it on all your pages if they are more Maths-heavy than these
-    simple starter pages.
-
-<script id="MathJax-script" src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
-<script>
-  window.MathJax = {
-    tex: {
-      inlineMath: [["\\(", "\\)"]],
-      displayMath: [["\\[", "\\]"]],
-      processEscapes: true,
-      processEnvironments: true
-    },
-    options: {
-      ignoreHtmlClass: ".*|",
-      processHtmlClass: "arithmatex"
-    }
-  };
-
-  document$.subscribe(() => {
-    MathJax.startup.output.clearCache()
-    MathJax.typesetClear()
-    MathJax.texReset()
-    MathJax.typesetPromise()
-  })
-</script>
-
-## Task Lists
-
-> Go to [documentation](https://zensical.org/docs/authoring/lists/#using-task-lists)
-
-* [x] Install Zensical
-* [x] Configure `zensical.toml`
-* [x] Write amazing documentation
-* [ ] Deploy anywhere
-
-## Tooltips
-
-> Go to [documentation](https://zensical.org/docs/authoring/tooltips/)
-
-[Hover me][example]
-
-  [example]: https://example.com "I'm a tooltip!"
+- [Core](api/core.md): `Grid`
+- [Spectroscopy](api/spectroscopy.md): `Spectrum`
+- [Overlap](api/overlap.md): bin-overlap rebinning primitives
+- [Photometry](api/photometry.md): synthetic photometry
+- [Image](api/image.md): reprojection, convolution, and stamp extraction
+- [PSF](api/psf.md): ePSF and extended-PSF construction

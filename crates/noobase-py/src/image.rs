@@ -295,7 +295,8 @@ fn convolve_gaussian_axis_impl<'py, T: Scalar>(
 }
 
 pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule>) -> PyResult<()> {
-    let image = PyModule::new(py, "image")?;
+    let image = PyModule::new(py, "noobase._core.image")?;
+    image.setattr("__package__", "noobase._core")?;
     image.add_function(wrap_pyfunction!(reproject_exact_function, &image)?)?;
     image.add_function(wrap_pyfunction!(convolve_psf_function, &image)?)?;
     image.add_function(wrap_pyfunction!(convolve_gaussian_axis_function, &image)?)?;

@@ -2,7 +2,6 @@ name: Documentation
 on:
   push:
     branches:
-      - master
       - main
 permissions:
   contents: read
@@ -20,7 +19,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-      - run: uv run --only-group docs zensical build --clean
+      - run: uv run --group docs zensical build --clean
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site

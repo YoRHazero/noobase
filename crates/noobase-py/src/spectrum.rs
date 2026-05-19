@@ -49,7 +49,11 @@ impl IntoSpectrumInner for CoreSpectrum<f64> {
 /// Use ``rebin`` to resample onto a new wavelength axis, ``to_f_nu`` /
 /// ``to_f_lambda`` to convert between flux density conventions, and
 /// ``synthetic_photometry`` to integrate through a transmission curve.
-#[pyclass(name = "Spectrum", module = "noobase._core", skip_from_py_object)]
+#[pyclass(
+    name = "Spectrum",
+    module = "noobase._core.spectroscopy",
+    skip_from_py_object
+)]
 pub struct PySpectrum {
     inner: SpectrumInner,
 }
@@ -536,6 +540,18 @@ impl PySpectrum {
         };
         format!("Spectrum(n_bins={n}, dtype={dtype_name})")
     }
+}
+
+pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule>) -> PyResult<()> {
+    let spectroscopy = PyModule::new(py, "noobase._core.spectroscopy")?;
+    spectroscopy.setattr("__package__", "noobase._core")?;
+    spectroscopy.add_class::<PySpectrum>()?;
+    parent.add_submodule(&spectroscopy)?;
+
+    let sys_modules = py.import("sys")?.getattr("modules")?;
+    sys_modules.set_item("noobase._core.spectroscopy", &spectroscopy)?;
+
+    Ok(())
 }
 
 fn new_impl<T: Scalar + GridChannel>(

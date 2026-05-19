@@ -14,13 +14,13 @@ def test_all_bindings_have_docstrings():
         noobase.Grid.to_edges,
         noobase.Grid.to_centers,
         noobase.Grid.is_uniform,
-        noobase.Spectrum,
-        noobase.Spectrum.__init__,
-        noobase.Spectrum.rebin,
-        noobase.Spectrum.to_f_nu,
-        noobase.Spectrum.to_f_lambda,
-        noobase.Spectrum.synthetic_photometry,
-        noobase.Spectrum.convolve_lsf,
+        noobase.spectroscopy.Spectrum,
+        noobase.spectroscopy.Spectrum.__init__,
+        noobase.spectroscopy.Spectrum.rebin,
+        noobase.spectroscopy.Spectrum.to_f_nu,
+        noobase.spectroscopy.Spectrum.to_f_lambda,
+        noobase.spectroscopy.Spectrum.synthetic_photometry,
+        noobase.spectroscopy.Spectrum.convolve_lsf,
         noobase.image.convolve_psf,
         noobase.image.convolve_gaussian_axis,
         noobase.overlap.rebin,
@@ -58,12 +58,12 @@ def test_all_bindings_have_docstrings():
         (noobase.Grid, "spacing"),
         (noobase.Grid, "kind"),
         (noobase.Grid, "dtype"),
-        (noobase.Spectrum, "wavelength"),
-        (noobase.Spectrum, "flux"),
-        (noobase.Spectrum, "error"),
-        (noobase.Spectrum, "mask"),
-        (noobase.Spectrum, "n_bins"),
-        (noobase.Spectrum, "dtype"),
+        (noobase.spectroscopy.Spectrum, "wavelength"),
+        (noobase.spectroscopy.Spectrum, "flux"),
+        (noobase.spectroscopy.Spectrum, "error"),
+        (noobase.spectroscopy.Spectrum, "mask"),
+        (noobase.spectroscopy.Spectrum, "n_bins"),
+        (noobase.spectroscopy.Spectrum, "dtype"),
         (noobase.photometry.SyntheticOperator, "coverage"),
         (noobase.photometry.SyntheticOperator, "dtype"),
         (noobase.image.StampResult, "stamp"),
@@ -95,3 +95,31 @@ def test_all_bindings_have_docstrings():
         assert doc is not None and len(doc.strip()) > 20, (
             f"{cls.__name__}.{name} has no docstring (got: {doc!r})"
         )
+
+
+def test_spectrum_is_exported_from_spectroscopy_module():
+    """Spectrum is exposed from the spectroscopy module, not the package root."""
+    assert not hasattr(noobase, "Spectrum")
+    assert noobase.spectroscopy.Spectrum.__module__ == "noobase._core.spectroscopy"
+
+
+def test_pyo3_module_metadata_uses_importable_paths():
+    """PyO3 bindings should advertise importable module paths."""
+    expected = {
+        noobase.spectroscopy.Spectrum: "noobase._core.spectroscopy",
+        noobase.overlap.rebin: "noobase._core.overlap",
+        noobase.overlap.rebin_variance: "noobase._core.overlap",
+        noobase.overlap.coverage: "noobase._core.overlap",
+        noobase.photometry.synthetic: "noobase._core.photometry",
+        noobase.image.reproject_exact: "noobase._core.image",
+        noobase.image.convolve_psf: "noobase._core.image",
+        noobase.image.convolve_gaussian_axis: "noobase._core.image",
+        noobase.image.build_stamp: "noobase._core.image",
+        noobase.image.psf.robust_combine: "noobase._core.image.psf",
+        noobase.image.psf.solve_flux_background: "noobase._core.image.psf",
+        noobase.image.psf.build_epsf: "noobase._core.image.psf",
+        noobase.image.psf.stitch_psf: "noobase._core.image.psf",
+        noobase.image.psf.build_extended_psf: "noobase._core.image.psf",
+    }
+    for obj, module_name in expected.items():
+        assert obj.__module__ == module_name

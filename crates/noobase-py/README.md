@@ -22,7 +22,7 @@ wavelength = np.linspace(1.0, 5.0, 200)
 flux = np.exp(-((wavelength - 3.0) ** 2) / 0.5)
 error = 0.01 * np.ones_like(flux)
 
-spectrum = noobase.Spectrum(
+spectrum = noobase.spectroscopy.Spectrum(
     wavelength=wavelength,
     flux=flux,
     error=error,
@@ -56,7 +56,7 @@ band_flux, band_error, coverage = spectrum.synthetic_photometry(
 ## Convolution examples
 
 ```python
-template = noobase.Spectrum(
+template = noobase.spectroscopy.Spectrum(
     wavelength=wavelength,
     flux=flux,
     spacing="linear",

@@ -1,4 +1,4 @@
-"""Tests for the noobase.Spectrum binding."""
+"""Tests for the noobase.spectroscopy.Spectrum binding."""
 
 import numpy as np
 import pytest
@@ -22,7 +22,7 @@ def _edges_grid(values, dtype):
 def test_construct_with_array_wavelength(dtype):
     wavelength = np.array([1.0, 2.0, 3.0, 4.0], dtype=dtype)
     flux = np.array([10.0, 20.0, 30.0, 40.0], dtype=dtype)
-    spectrum = noobase.Spectrum(
+    spectrum = noobase.spectroscopy.Spectrum(
         wavelength=wavelength,
         flux=flux,
         spacing="linear",
@@ -45,7 +45,7 @@ def test_construct_with_grid_wavelength(dtype):
         kind="edges",
     )
     flux = np.array([1.0, 2.0, 3.0, 4.0], dtype=dtype)
-    spectrum = noobase.Spectrum(wavelength=grid, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=grid, flux=flux)
     assert spectrum.n_bins == 4
     assert spectrum.wavelength.kind == "edges"
 
@@ -54,21 +54,21 @@ def test_construct_grid_plus_spacing_is_rejected():
     grid = noobase.Grid(np.array([1.0, 2.0, 3.0]))
     flux = np.array([1.0, 2.0, 3.0])
     with pytest.raises(ValueError, match="spacing/kind must not be passed"):
-        noobase.Spectrum(wavelength=grid, flux=flux, spacing="linear")
+        noobase.spectroscopy.Spectrum(wavelength=grid, flux=flux, spacing="linear")
 
 
 def test_construct_grid_plus_kind_is_rejected():
     grid = noobase.Grid(np.array([1.0, 2.0, 3.0]))
     flux = np.array([1.0, 2.0, 3.0])
     with pytest.raises(ValueError, match="spacing/kind must not be passed"):
-        noobase.Spectrum(wavelength=grid, flux=flux, kind="centers")
+        noobase.spectroscopy.Spectrum(wavelength=grid, flux=flux, kind="centers")
 
 
 def test_construct_wavelength_dtype_mismatch():
     wavelength = np.array([1.0, 2.0, 3.0], dtype=np.float32)
     flux = np.array([1.0, 2.0, 3.0], dtype=np.float64)
     with pytest.raises(ValueError, match="dtype mismatch"):
-        noobase.Spectrum(wavelength=wavelength, flux=flux)
+        noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
 
 
 def test_construct_error_dtype_mismatch():
@@ -76,14 +76,14 @@ def test_construct_error_dtype_mismatch():
     flux = np.array([1.0, 2.0, 3.0], dtype=np.float64)
     error = np.array([0.1, 0.1, 0.1], dtype=np.float32)
     with pytest.raises(ValueError, match="dtype mismatch"):
-        noobase.Spectrum(wavelength=wavelength, flux=flux, error=error)
+        noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux, error=error)
 
 
 def test_construct_flux_length_mismatch():
     wavelength = np.array([1.0, 2.0, 3.0])
     flux = np.array([1.0, 2.0])
     with pytest.raises(ValueError, match="flux length"):
-        noobase.Spectrum(wavelength=wavelength, flux=flux)
+        noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
 
 
 def test_construct_error_length_mismatch():
@@ -91,7 +91,7 @@ def test_construct_error_length_mismatch():
     flux = np.array([1.0, 2.0, 3.0])
     error = np.array([0.1, 0.1])
     with pytest.raises(ValueError, match="error length"):
-        noobase.Spectrum(wavelength=wavelength, flux=flux, error=error)
+        noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux, error=error)
 
 
 def test_construct_mask_length_mismatch():
@@ -99,7 +99,7 @@ def test_construct_mask_length_mismatch():
     flux = np.array([1.0, 2.0, 3.0])
     mask = np.array([True, False], dtype=np.bool_)
     with pytest.raises(ValueError, match="mask length"):
-        noobase.Spectrum(wavelength=wavelength, flux=flux, mask=mask)
+        noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux, mask=mask)
 
 
 def test_mask_rejects_non_bool_dtype():
@@ -107,7 +107,7 @@ def test_mask_rejects_non_bool_dtype():
     flux = np.array([1.0, 2.0, 3.0])
     mask = np.array([1, 0, 1], dtype=np.int8)
     with pytest.raises(ValueError, match="mask must be"):
-        noobase.Spectrum(wavelength=wavelength, flux=flux, mask=mask)
+        noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux, mask=mask)
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ def test_full_accessor_roundtrip(dtype):
     flux = np.array([10.0, 20.0, 30.0, 40.0], dtype=dtype)
     error = np.array([0.5, 0.6, 0.7, 0.8], dtype=dtype)
     mask = np.array([True, True, False, True], dtype=np.bool_)
-    spectrum = noobase.Spectrum(
+    spectrum = noobase.spectroscopy.Spectrum(
         wavelength=wavelength,
         flux=flux,
         error=error,
@@ -136,7 +136,7 @@ def test_full_accessor_roundtrip(dtype):
 def test_returned_arrays_are_copies():
     wavelength = np.array([1.0, 2.0, 3.0])
     flux = np.array([10.0, 20.0, 30.0])
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     fetched = spectrum.flux
     fetched[0] = -999.0
     # Subsequent access yields an unmutated copy.
@@ -152,7 +152,7 @@ def test_returned_arrays_are_copies():
 def test_rebin_with_array_target(dtype):
     wavelength = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
     flux = np.array([1.0, 3.0, 5.0, 9.0], dtype=dtype)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     target_edges = np.array([0.0, 2.0, 4.0], dtype=dtype)
     rebinned = spectrum.rebin(target_edges, kind="edges")
     assert rebinned.n_bins == 2
@@ -163,7 +163,7 @@ def test_rebin_with_array_target(dtype):
 def test_rebin_with_grid_target(dtype):
     wavelength = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
     flux = np.array([1.0, 3.0, 5.0, 9.0], dtype=dtype)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     target = _edges_grid([0.0, 2.0, 4.0], dtype)
     rebinned = spectrum.rebin(target)
     np.testing.assert_allclose(rebinned.flux, [2.0, 7.0], rtol=TOLERANCE)
@@ -172,7 +172,7 @@ def test_rebin_with_grid_target(dtype):
 def test_rebin_rejects_dtype_mismatch_with_target():
     wavelength = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], np.float32)
     flux = np.array([1.0, 3.0, 5.0, 9.0], dtype=np.float32)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     target = _edges_grid([0.0, 2.0, 4.0], np.float64)
     with pytest.raises(ValueError, match="dtype mismatch"):
         spectrum.rebin(target)
@@ -181,7 +181,7 @@ def test_rebin_rejects_dtype_mismatch_with_target():
 def test_rebin_rejects_grid_with_spacing():
     wavelength = _edges_grid([0.0, 1.0, 2.0], np.float64)
     flux = np.array([1.0, 2.0], dtype=np.float64)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     target = _edges_grid([0.0, 2.0], np.float64)
     with pytest.raises(ValueError, match="spacing/kind must not be passed"):
         spectrum.rebin(target, spacing="linear")
@@ -193,7 +193,7 @@ def test_rebin_identity_roundtrip(dtype):
     flux = np.array([1.0, 2.0, 3.0, 4.0], dtype=dtype)
     error = np.array([0.5, 0.4, 0.3, 0.2], dtype=dtype)
     mask = np.array([True, True, False, True], dtype=np.bool_)
-    spectrum = noobase.Spectrum(
+    spectrum = noobase.spectroscopy.Spectrum(
         wavelength=wavelength,
         flux=flux,
         error=error,
@@ -213,7 +213,7 @@ def test_rebin_mask_propagation_two_to_one(dtype):
     target = _edges_grid([0.0, 2.0, 4.0], dtype)
     flux = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
     mask = np.array([True, False, False, False], dtype=np.bool_)
-    spectrum = noobase.Spectrum(
+    spectrum = noobase.spectroscopy.Spectrum(
         wavelength=source_wavelength,
         flux=flux,
         mask=mask,
@@ -231,7 +231,7 @@ def test_rebin_downsample_error_quadrature(dtype):
     sigma = dtype(np.sqrt(variance))
     flux = np.zeros(4, dtype=dtype)
     error = np.full(4, sigma, dtype=dtype)
-    spectrum = noobase.Spectrum(
+    spectrum = noobase.spectroscopy.Spectrum(
         wavelength=source_wavelength,
         flux=flux,
         error=error,
@@ -254,7 +254,7 @@ def _conversion_tolerance(dtype):
 def test_flux_conversion_round_trip(dtype):
     wavelength = np.array([1000.0, 1500.0, 2000.0, 2500.0], dtype=dtype)
     flux = np.array([3.5, 4.1, 5.7, 2.3], dtype=dtype)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     speed_of_light = 2.998e18
     recovered = spectrum.to_f_nu(speed_of_light).to_f_lambda(speed_of_light)
     np.testing.assert_allclose(
@@ -267,7 +267,7 @@ def test_flux_conversion_forward_analytical(dtype):
     # Centers [2, 5], flux=[1, 1], c=1 -> to_f_nu yields flux=[4, 25].
     wavelength = np.array([2.0, 5.0], dtype=dtype)
     flux = np.array([1.0, 1.0], dtype=dtype)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     output = spectrum.to_f_nu(1.0)
     np.testing.assert_allclose(
         output.flux, [4.0, 25.0], rtol=_conversion_tolerance(dtype)
@@ -281,7 +281,7 @@ def test_flux_conversion_error_scaling(dtype):
     wavelength = np.array([2.0, 5.0], dtype=dtype)
     flux = np.array([1.0, 1.0], dtype=dtype)
     error = np.array([0.1, 0.2], dtype=dtype)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux, error=error)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux, error=error)
     forward = spectrum.to_f_nu(1.0)
     # factor = [4, 25]; error scales by the same factor.
     np.testing.assert_allclose(
@@ -301,7 +301,7 @@ def test_flux_conversion_mask_preservation(dtype):
     wavelength = np.array([1.0, 2.0, 3.0, 4.0], dtype=dtype)
     flux = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
     mask = np.array([True, False, True, False], dtype=np.bool_)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux, mask=mask)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux, mask=mask)
     forward = spectrum.to_f_nu(1.0)
     np.testing.assert_array_equal(forward.mask, mask)
     backward = spectrum.to_f_lambda(1.0)
@@ -312,7 +312,7 @@ def test_flux_conversion_mask_preservation(dtype):
 def test_flux_conversion_dtype_preserved(dtype):
     wavelength = np.array([1.0, 2.0, 3.0], dtype=dtype)
     flux = np.array([1.0, 2.0, 3.0], dtype=dtype)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     forward = spectrum.to_f_nu(1.0)
     assert forward.flux.dtype == np.dtype(dtype)
     assert forward.dtype == np.dtype(dtype)
@@ -324,7 +324,7 @@ def test_flux_conversion_dtype_preserved(dtype):
 def test_flux_conversion_wavelength_preserved(dtype):
     wavelength = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
     flux = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     output = spectrum.to_f_nu(1.0)
     assert output.wavelength.kind == wavelength.kind
     assert output.wavelength.spacing == wavelength.spacing

@@ -339,7 +339,7 @@ def test_spectrum_synthetic_photometry_matches_free_function(dtype):
     flux = np.array([1.0, 2.0, 3.0, 4.0], dtype=dtype)
     transmission_grid = _edges_grid([1.0, 2.0, 3.0], dtype)
     transmission = np.array([0.5, 0.7], dtype=dtype)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     free = noobase.photometry.synthetic(
         spectrum_grid=wavelength,
         spectrum_flux=flux,
@@ -361,7 +361,7 @@ def test_spectrum_synthetic_photometry_default_convention():
     flux = np.array([0.5, 1.5, 2.5, 3.5], dtype=np.float64)
     transmission_grid = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], np.float64)
     transmission = np.ones(4, dtype=np.float64)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     default_result = spectrum.synthetic_photometry(
         transmission_grid=transmission_grid,
         transmission_values=transmission,
@@ -380,7 +380,7 @@ def test_spectrum_synthetic_photometry_propagates_error_when_present(dtype):
     flux = np.zeros(4, dtype=dtype)
     sigma = dtype(0.5)
     error = np.full(4, sigma, dtype=dtype)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux, error=error)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux, error=error)
     transmission_grid = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
     transmission = np.ones(4, dtype=dtype)
     band_flux, band_error, coverage = spectrum.synthetic_photometry(
@@ -397,7 +397,7 @@ def test_spectrum_synthetic_photometry_propagates_error_when_present(dtype):
 def test_spectrum_synthetic_photometry_no_error_yields_none():
     wavelength = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], np.float64)
     flux = np.ones(4, dtype=np.float64)
-    spectrum = noobase.Spectrum(wavelength=wavelength, flux=flux)
+    spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
     transmission_grid = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], np.float64)
     transmission = np.ones(4, dtype=np.float64)
     _band_flux, band_error, _coverage = spectrum.synthetic_photometry(

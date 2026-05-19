@@ -1013,7 +1013,8 @@ pub(crate) fn register<'py>(py: Python<'py>, image: &Bound<'py, PyModule>) -> Py
     image.add_function(wrap_pyfunction!(build_stamp_function, image)?)?;
     image.add_class::<PyStampResult>()?;
 
-    let psf = PyModule::new(py, "psf")?;
+    let psf = PyModule::new(py, "noobase._core.image.psf")?;
+    psf.setattr("__package__", "noobase._core.image")?;
     psf.add_function(wrap_pyfunction!(robust_combine_function, &psf)?)?;
     psf.add_function(wrap_pyfunction!(solve_flux_background_function, &psf)?)?;
     psf.add_function(wrap_pyfunction!(build_epsf_function, &psf)?)?;

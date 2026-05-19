@@ -51,7 +51,7 @@ wavelength = np.linspace(1.0, 5.0, 200)
 flux = np.exp(-((wavelength - 3.0) ** 2) / 0.5)
 error = 0.01 * np.ones_like(flux)
 
-spectrum = noobase.Spectrum(
+spectrum = noobase.spectroscopy.Spectrum(
     wavelength=wavelength,
     flux=flux,
     error=error,
@@ -71,7 +71,7 @@ print(rebinned.flux.shape, rebinned.error.shape)
 Broaden a noise-free spectral template with a Gaussian line-spread function. `convolve_lsf` rejects spectra that carry `error` or `mask`, so observed spectra do not get silently re-convolved as if they were templates:
 
 ```python
-template = noobase.Spectrum(
+template = noobase.spectroscopy.Spectrum(
     wavelength=wavelength,
     flux=flux,
     spacing="linear",

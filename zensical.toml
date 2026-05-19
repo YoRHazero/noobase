@@ -22,7 +22,7 @@ site_description = "Foundational pure-function utilities for astronomy analysis.
 # The site_author attribute. This is used in the HTML head element.
 #
 # Read more: https://zensical.org/docs/setup/basics/#site_author
-site_author = "zchao"
+site_author = "Zhu Chenghao"
 
 # The site_url is the canonical URL for your site. When building online
 # documentation you should set this.
@@ -44,10 +44,19 @@ Copyright &copy; 2026 The authors
 # can be defined using TOML syntax.
 #
 # Read more: https://zensical.org/docs/setup/navigation/
-# nav = [
-#   { "Get started" = "index.md" },
-#   { "Markdown in 5min" = "markdown.md" },
-# ]
+nav = [
+  { "Home" = "index.md" },
+  { "API Reference" = [
+    { "Overview" = "api/index.md" },
+    { "Core" = "api/core.md" },
+    { "Spectroscopy" = "api/spectroscopy.md" },
+    { "Overlap" = "api/overlap.md" },
+    { "Photometry" = "api/photometry.md" },
+    { "Image" = "api/image.md" },
+    { "PSF" = "api/psf.md" },
+  ] },
+  { "Development" = "development.md" },
+]
 
 # With the "extra_css" option you can add your own CSS styling to customize
 # your Zensical project according to your needs. You can add any number of
@@ -303,6 +312,25 @@ toggle.name = "Switch to light mode"
 #[[project.extra.social]]
 #icon = "fontawesome/brands/github"
 #link = "https://github.com/user/repo"
+
+# ----------------------------------------------------------------------------
+# API reference generation from Python docstrings.
+# ----------------------------------------------------------------------------
+[project.plugins.mkdocstrings.handlers.python]
+paths = []
+inventories = ["https://docs.python.org/3/objects.inv"]
+load_external_modules = true
+
+[project.plugins.mkdocstrings.handlers.python.options]
+allow_inspection = true
+force_inspection = true
+docstring_style = "numpy"
+show_source = false
+show_root_heading = false
+show_root_full_path = false
+show_object_full_path = false
+members_order = "source"
+filters = ["!^__", "!^_[^_]"]
 
 # ----------------------------------------------------------------------------
 # In this section you can configure the Markdown extensions that are used when

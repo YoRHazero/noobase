@@ -186,7 +186,8 @@ fn coverage_impl<'py, T: Scalar>(
 }
 
 pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule>) -> PyResult<()> {
-    let overlap = PyModule::new(py, "overlap")?;
+    let overlap = PyModule::new(py, "noobase._core.overlap")?;
+    overlap.setattr("__package__", "noobase._core")?;
     overlap.add_function(wrap_pyfunction!(overlap_rebin, &overlap)?)?;
     overlap.add_function(wrap_pyfunction!(overlap_rebin_variance, &overlap)?)?;
     overlap.add_function(wrap_pyfunction!(overlap_coverage, &overlap)?)?;
