@@ -1,4 +1,4 @@
-use ::noobase::Grid as CoreGrid;
+use ::noobase::axis::Grid as CoreGrid;
 use ::noobase::axis::overlap as core_overlap;
 use ndarray::Array1;
 use numpy::IntoPyArray;

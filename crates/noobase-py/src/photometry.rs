@@ -1,4 +1,4 @@
-use ::noobase::Grid as CoreGrid;
+use ::noobase::axis::Grid as CoreGrid;
 use ::noobase::spectroscopy::synthetic_photometry as core_photometry;
 use ::noobase::spectroscopy::synthetic_photometry::PhotometryConvention;
 use ndarray::Array1;

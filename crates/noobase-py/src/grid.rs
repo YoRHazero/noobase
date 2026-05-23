@@ -1,4 +1,4 @@
-use ::noobase::Grid as CoreGrid;
+use ::noobase::axis::Grid as CoreGrid;
 use ndarray::Array1;
 use numpy::{PyArrayDescr, PyReadonlyArray1, ToPyArray, dtype};
 use pyo3::exceptions::PyValueError;

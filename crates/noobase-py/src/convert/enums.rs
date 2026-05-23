@@ -10,7 +10,7 @@ use ::noobase::convolve::{Boundary, Normalization};
 use ::noobase::image::psf::{CombineMethod, ResidualReweight};
 use ::noobase::spectroscopy::synthetic_photometry::PhotometryConvention;
 use ::noobase::spectroscopy::LsfSpec;
-use ::noobase::{GridKind, Spacing};
+use ::noobase::axis::{GridKind, Spacing};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 

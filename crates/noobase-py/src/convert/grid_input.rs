@@ -6,7 +6,7 @@
 //! centers vs edges from a paired array's length). Both keep the dtype
 //! channel decided by the array's dtype.
 
-use ::noobase::{Grid as CoreGrid, GridKind, Spacing};
+use ::noobase::axis::{Grid as CoreGrid, GridKind, Spacing};
 use ndarray::Array1;
 use numpy::PyReadonlyArray1;
 use pyo3::exceptions::PyValueError;
@@ -19,11 +19,11 @@ use crate::grid::{GridInner, PyGrid};
 /// the dtype name actually found, so callers can phrase the canonical
 /// cross-input mismatch message.
 pub(crate) trait GridChannel: ::noobase::Float + Sized {
-    fn from_grid_inner(inner: GridInner) -> Result<::noobase::Grid<Self>, &'static str>;
+    fn from_grid_inner(inner: GridInner) -> Result<::noobase::axis::Grid<Self>, &'static str>;
 }
 
 impl GridChannel for f32 {
-    fn from_grid_inner(inner: GridInner) -> Result<::noobase::Grid<f32>, &'static str> {
+    fn from_grid_inner(inner: GridInner) -> Result<::noobase::axis::Grid<f32>, &'static str> {
         match inner {
             GridInner::F32(grid) => Ok(grid),
             GridInner::F64(_) => Err("float64"),
@@ -32,7 +32,7 @@ impl GridChannel for f32 {
 }
 
 impl GridChannel for f64 {
-    fn from_grid_inner(inner: GridInner) -> Result<::noobase::Grid<f64>, &'static str> {
+    fn from_grid_inner(inner: GridInner) -> Result<::noobase::axis::Grid<f64>, &'static str> {
         match inner {
             GridInner::F64(grid) => Ok(grid),
             GridInner::F32(_) => Err("float32"),
