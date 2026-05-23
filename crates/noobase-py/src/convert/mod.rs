@@ -23,8 +23,9 @@ pub(crate) use dtype::{
     to_value_error, with_grid_pair, with_inner,
 };
 pub(crate) use enums::{
-    kind_to_str, parse_boundary, parse_combine_method, parse_convention, parse_kind,
-    parse_lsf_spec, parse_normalization, parse_residual_reweight, parse_spacing, spacing_to_str,
+    kind_to_str, parse_axis, parse_boundary, parse_combine_method, parse_convention,
+    parse_gaussian_sampling, parse_kind, parse_lsf_spec, parse_normalization,
+    parse_residual_reweight, parse_spacing, spacing_to_str,
 };
 pub(crate) use grid_input::{GridChannel, build_grid_from_any, coerce_to_grid, grid_channel};
 pub(crate) use tuple::{band_pair, band_triple};

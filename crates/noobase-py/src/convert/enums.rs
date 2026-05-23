@@ -6,11 +6,12 @@
 //! literal is always a `ValueError` naming the accepted set (the
 //! convention shared crate-wide).
 
-use ::noobase::convolve::{Boundary, Normalization};
-use ::noobase::image::psf::{CombineMethod, ResidualReweight};
-use ::noobase::spectroscopy::synthetic_photometry::PhotometryConvention;
-use ::noobase::spectroscopy::LsfSpec;
 use ::noobase::axis::{GridKind, Spacing};
+use ::noobase::convolve::{Boundary, GaussianSampling, Normalization};
+use ::noobase::image::psf::{CombineMethod, ResidualReweight};
+use ::noobase::spectroscopy::LsfSpec;
+use ::noobase::spectroscopy::synthetic_photometry::PhotometryConvention;
+use ndarray::Axis;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -97,6 +98,26 @@ pub(crate) fn parse_boundary(value: &str) -> PyResult<Boundary> {
         "nearest" => Ok(Boundary::Nearest),
         other => Err(PyValueError::new_err(format!(
             "invalid boundary {other:?}; expected one of \"zero\", \"reflect\", \"nearest\""
+        ))),
+    }
+}
+
+pub(crate) fn parse_gaussian_sampling(value: &str) -> PyResult<GaussianSampling> {
+    match value {
+        "erf_integrated" => Ok(GaussianSampling::ErfIntegrated),
+        "point_sampled" => Ok(GaussianSampling::PointSampled),
+        other => Err(PyValueError::new_err(format!(
+            "invalid sampling {other:?}; expected one of \"erf_integrated\", \"point_sampled\""
+        ))),
+    }
+}
+
+pub(crate) fn parse_axis(value: usize) -> PyResult<Axis> {
+    match value {
+        0 => Ok(Axis(0)),
+        1 => Ok(Axis(1)),
+        other => Err(PyValueError::new_err(format!(
+            "axis must be 0 or 1, got {other}"
         ))),
     }
 }

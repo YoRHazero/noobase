@@ -49,6 +49,7 @@ nav = [
   { "API Reference" = [
     { "Overview" = "api/index.md" },
     { "Axis" = "api/axis.md" },
+    { "Convolve" = "api/convolve.md" },
     { "Spectroscopy" = "api/spectroscopy.md" },
     { "Photometry" = "api/photometry.md" },
     { "Image" = "api/image.md" },

@@ -11,6 +11,7 @@ this site focuses on the Python-facing package.
 ## Sections
 
 - [Axis](axis.md)
+- [Convolve](convolve.md)
 - [Spectroscopy](spectroscopy.md)
 - [Photometry](photometry.md)
 - [Image](image.md)
