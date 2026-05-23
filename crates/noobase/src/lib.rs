@@ -3,7 +3,6 @@ mod float;
 pub mod axis;
 pub mod convolve;
 pub mod image;
-pub mod photometry;
 pub mod spectroscopy;
 
 pub use axis::{Grid, GridError, GridKind, Spacing};

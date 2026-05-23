@@ -1,6 +1,6 @@
 use ::noobase::Grid as CoreGrid;
-use ::noobase::photometry as core_photometry;
-use ::noobase::photometry::PhotometryConvention;
+use ::noobase::spectroscopy::synthetic_photometry as core_photometry;
+use ::noobase::spectroscopy::synthetic_photometry::PhotometryConvention;
 use ndarray::Array1;
 use numpy::{PyArrayDescr, PyReadonlyArray1, dtype};
 use pyo3::exceptions::PyValueError;

@@ -1,5 +1,5 @@
-use ::noobase::photometry as core_photometry;
-use ::noobase::photometry::PhotometryConvention;
+use ::noobase::spectroscopy::synthetic_photometry as core_photometry;
+use ::noobase::spectroscopy::synthetic_photometry::PhotometryConvention;
 use ::noobase::spectroscopy::Spectrum as CoreSpectrum;
 use ndarray::Array1;
 use numpy::{PyArrayDescr, ToPyArray, dtype};
