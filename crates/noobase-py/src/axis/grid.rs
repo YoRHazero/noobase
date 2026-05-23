@@ -29,7 +29,7 @@ pub(crate) enum GridInner {
 /// at construction and exposed via the ``dtype`` property. Most downstream
 /// operations (``Spectrum.rebin``, ``photometry.synthetic``) require dtypes
 /// to match across all inputs.
-#[pyclass(name = "Grid", module = "noobase._core", from_py_object)]
+#[pyclass(name = "Grid", module = "noobase._core.axis", from_py_object)]
 #[derive(Clone)]
 pub struct PyGrid {
     pub(crate) inner: GridInner,

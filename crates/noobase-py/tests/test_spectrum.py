@@ -10,7 +10,7 @@ TOLERANCE = 1e-6
 
 
 def _edges_grid(values, dtype):
-    return noobase.Grid(np.array(values, dtype=dtype), spacing="linear", kind="edges")
+    return noobase.axis.Grid(np.array(values, dtype=dtype), spacing="linear", kind="edges")
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +30,7 @@ def test_construct_with_array_wavelength(dtype):
     )
     assert spectrum.n_bins == 4
     assert spectrum.dtype == np.dtype(dtype)
-    assert isinstance(spectrum.wavelength, noobase.Grid)
+    assert isinstance(spectrum.wavelength, noobase.axis.Grid)
     assert spectrum.wavelength.dtype == np.dtype(dtype)
     np.testing.assert_allclose(spectrum.flux, flux, rtol=TOLERANCE)
     assert spectrum.error is None
@@ -39,7 +39,7 @@ def test_construct_with_array_wavelength(dtype):
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_construct_with_grid_wavelength(dtype):
-    grid = noobase.Grid(
+    grid = noobase.axis.Grid(
         np.array([0.0, 1.0, 2.0, 3.0, 4.0], dtype=dtype),
         spacing="linear",
         kind="edges",
@@ -51,14 +51,14 @@ def test_construct_with_grid_wavelength(dtype):
 
 
 def test_construct_grid_plus_spacing_is_rejected():
-    grid = noobase.Grid(np.array([1.0, 2.0, 3.0]))
+    grid = noobase.axis.Grid(np.array([1.0, 2.0, 3.0]))
     flux = np.array([1.0, 2.0, 3.0])
     with pytest.raises(ValueError, match="spacing/kind must not be passed"):
         noobase.spectroscopy.Spectrum(wavelength=grid, flux=flux, spacing="linear")
 
 
 def test_construct_grid_plus_kind_is_rejected():
-    grid = noobase.Grid(np.array([1.0, 2.0, 3.0]))
+    grid = noobase.axis.Grid(np.array([1.0, 2.0, 3.0]))
     flux = np.array([1.0, 2.0, 3.0])
     with pytest.raises(ValueError, match="spacing/kind must not be passed"):
         noobase.spectroscopy.Spectrum(wavelength=grid, flux=flux, kind="centers")

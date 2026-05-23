@@ -10,9 +10,8 @@ this site focuses on the Python-facing package.
 
 ## Sections
 
-- [Core](core.md)
+- [Axis](axis.md)
 - [Spectroscopy](spectroscopy.md)
-- [Overlap](overlap.md)
 - [Photometry](photometry.md)
 - [Image](image.md)
 - [PSF](psf.md)

@@ -12,7 +12,7 @@ use pyo3::prelude::*;
 use crate::convert::{Scalar, dtype_mismatch_error};
 
 /// Extract a 1-D numpy array already known to be channel `T` (e.g. a
-/// value array paired with a typed [`Grid`](crate::grid::PyGrid)). A
+/// value array paired with a typed [`Grid`](crate::axis::PyGrid)). A
 /// dtype other than `T` is the canonical cross-input mismatch
 /// `ValueError`, contextualised by `mismatch_context` and naming the
 /// offending `role` (matching the historical `overlap` messages).

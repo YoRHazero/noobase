@@ -13,7 +13,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::convert::{Scalar, dtype_mismatch_error};
-use crate::grid::{GridInner, PyGrid};
+use crate::axis::{GridInner, PyGrid};
 
 /// Project a [`GridInner`] onto a concrete channel. The `Err` carries
 /// the dtype name actually found, so callers can phrase the canonical

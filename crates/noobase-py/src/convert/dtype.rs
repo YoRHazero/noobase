@@ -19,7 +19,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::grid::GridInner;
+use crate::axis::GridInner;
 
 /// The f32 / f64 channel marker: the only two numpy float dtypes the
 /// binding accepts. Carries the dtype name used verbatim in boundary
@@ -206,8 +206,8 @@ macro_rules! map_inner {
 macro_rules! with_grid_pair {
     ($a:expr, $b:expr, ($ga:ident, $gb:ident) => $body:expr) => {
         match ($a, $b) {
-            ($crate::grid::GridInner::F64($ga), $crate::grid::GridInner::F64($gb)) => $body,
-            ($crate::grid::GridInner::F32($ga), $crate::grid::GridInner::F32($gb)) => $body,
+            ($crate::axis::GridInner::F64($ga), $crate::axis::GridInner::F64($gb)) => $body,
+            ($crate::axis::GridInner::F32($ga), $crate::axis::GridInner::F32($gb)) => $body,
             (__left, __right) => ::std::result::Result::Err($crate::convert::dtype_mismatch_error(
                 $crate::convert::grid_dtype_name(__left),
                 $crate::convert::grid_dtype_name(__right),

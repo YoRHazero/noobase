@@ -50,9 +50,8 @@ rebinned = spectrum.rebin(target=target, spacing="linear", kind="centers")
 The Python API reference is generated from runtime docstrings exposed by the
 PyO3 bindings.
 
-- [Core](api/core.md): `Grid`
+- [Axis](api/axis.md): `Grid` and bin-overlap rebinning primitives
 - [Spectroscopy](api/spectroscopy.md): `Spectrum`
-- [Overlap](api/overlap.md): bin-overlap rebinning primitives
 - [Photometry](api/photometry.md): synthetic photometry
 - [Image](api/image.md): reprojection, convolution, and stamp extraction
 - [PSF](api/psf.md): ePSF and extended-PSF construction

@@ -1,6 +1,5 @@
 """Python bindings for the noobase Rust core."""
 
-from . import image, overlap, photometry, spectroscopy
-from ._core import Grid
+from . import axis, image, photometry, spectroscopy
 
-__all__ = ["Grid", "image", "overlap", "photometry", "spectroscopy"]
+__all__ = ["axis", "image", "photometry", "spectroscopy"]

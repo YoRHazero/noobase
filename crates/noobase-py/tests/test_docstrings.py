@@ -6,14 +6,14 @@ import noobase
 def test_all_bindings_have_docstrings():
     """Every public PyO3 binding must have a non-empty docstring."""
     targets = [
-        noobase.Grid,
-        noobase.Grid.__init__,
-        noobase.Grid.linspace,
-        noobase.Grid.logspace,
-        noobase.Grid.from_array,
-        noobase.Grid.to_edges,
-        noobase.Grid.to_centers,
-        noobase.Grid.is_uniform,
+        noobase.axis.Grid,
+        noobase.axis.Grid.__init__,
+        noobase.axis.Grid.linspace,
+        noobase.axis.Grid.logspace,
+        noobase.axis.Grid.from_array,
+        noobase.axis.Grid.to_edges,
+        noobase.axis.Grid.to_centers,
+        noobase.axis.Grid.is_uniform,
         noobase.spectroscopy.Spectrum,
         noobase.spectroscopy.Spectrum.__init__,
         noobase.spectroscopy.Spectrum.rebin,
@@ -23,9 +23,9 @@ def test_all_bindings_have_docstrings():
         noobase.spectroscopy.Spectrum.convolve_lsf,
         noobase.image.convolve_psf,
         noobase.image.convolve_gaussian_axis,
-        noobase.overlap.rebin,
-        noobase.overlap.rebin_variance,
-        noobase.overlap.coverage,
+        noobase.axis.overlap.rebin,
+        noobase.axis.overlap.rebin_variance,
+        noobase.axis.overlap.coverage,
         noobase.photometry.synthetic,
         noobase.photometry.SyntheticOperator,
         noobase.photometry.SyntheticOperator.__init__,
@@ -54,10 +54,10 @@ def test_all_bindings_have_docstrings():
     # their docstring on the descriptor; try multiple access paths to be
     # robust across PyO3 versions.
     property_targets = [
-        (noobase.Grid, "values"),
-        (noobase.Grid, "spacing"),
-        (noobase.Grid, "kind"),
-        (noobase.Grid, "dtype"),
+        (noobase.axis.Grid, "values"),
+        (noobase.axis.Grid, "spacing"),
+        (noobase.axis.Grid, "kind"),
+        (noobase.axis.Grid, "dtype"),
         (noobase.spectroscopy.Spectrum, "wavelength"),
         (noobase.spectroscopy.Spectrum, "flux"),
         (noobase.spectroscopy.Spectrum, "error"),
@@ -107,9 +107,9 @@ def test_pyo3_module_metadata_uses_importable_paths():
     """PyO3 bindings should advertise importable module paths."""
     expected = {
         noobase.spectroscopy.Spectrum: "noobase._core.spectroscopy",
-        noobase.overlap.rebin: "noobase._core.overlap",
-        noobase.overlap.rebin_variance: "noobase._core.overlap",
-        noobase.overlap.coverage: "noobase._core.overlap",
+        noobase.axis.overlap.rebin: "noobase._core.axis.overlap",
+        noobase.axis.overlap.rebin_variance: "noobase._core.axis.overlap",
+        noobase.axis.overlap.coverage: "noobase._core.axis.overlap",
         noobase.photometry.synthetic: "noobase._core.photometry",
         noobase.image.reproject_exact: "noobase._core.image",
         noobase.image.convolve_psf: "noobase._core.image",

@@ -10,11 +10,11 @@ TOLERANCE = 1e-6
 
 
 def _edges_grid(values, dtype):
-    return noobase.Grid(np.array(values, dtype=dtype), spacing="linear", kind="edges")
+    return noobase.axis.Grid(np.array(values, dtype=dtype), spacing="linear", kind="edges")
 
 
 def _centers_grid(values, dtype):
-    return noobase.Grid(np.array(values, dtype=dtype), spacing="linear", kind="centers")
+    return noobase.axis.Grid(np.array(values, dtype=dtype), spacing="linear", kind="centers")
 
 
 # ---------------------------------------------------------------------------

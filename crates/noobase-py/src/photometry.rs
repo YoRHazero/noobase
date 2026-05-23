@@ -10,7 +10,7 @@ use crate::convert::{
     GridChannel, Scalar, band_pair, band_triple, coerce_to_grid, dispatch_array, grid_channel,
     parse_convention, required_typed_array1, to_value_error, with_inner,
 };
-use crate::grid::{GridInner, PyGrid};
+use crate::axis::{GridInner, PyGrid};
 
 /// Extract a required channel-`T` array, or the photometry-family
 /// "`<what>` dtype must match `<reference>` (`<dtype>`)" `ValueError`.

@@ -6,7 +6,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::convert::{Scalar, typed_array1, with_grid_pair};
-use crate::grid::PyGrid;
+use crate::axis::PyGrid;
 
 /// Flux-density-conserving rebin from a source grid onto a target grid.
 ///
@@ -186,17 +186,15 @@ fn coverage_impl<'py, T: Scalar>(
 }
 
 pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule>) -> PyResult<()> {
-    let overlap = PyModule::new(py, "noobase._core.overlap")?;
-    overlap.setattr("__package__", "noobase._core")?;
+    let overlap = PyModule::new(py, "noobase._core.axis.overlap")?;
+    overlap.setattr("__package__", "noobase._core.axis")?;
     overlap.add_function(wrap_pyfunction!(overlap_rebin, &overlap)?)?;
     overlap.add_function(wrap_pyfunction!(overlap_rebin_variance, &overlap)?)?;
     overlap.add_function(wrap_pyfunction!(overlap_coverage, &overlap)?)?;
     parent.add_submodule(&overlap)?;
 
-    // Register the submodule under its dotted name so `from noobase._core.overlap
-    // import ...` (used by the `noobase.overlap` python wrapper) resolves.
     let sys_modules = py.import("sys")?.getattr("modules")?;
-    sys_modules.set_item("noobase._core.overlap", &overlap)?;
+    sys_modules.set_item("noobase._core.axis.overlap", &overlap)?;
 
     Ok(())
 }

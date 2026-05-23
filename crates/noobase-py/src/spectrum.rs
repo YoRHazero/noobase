@@ -12,7 +12,7 @@ use crate::convert::{
     optional_typed_array1, parse_convention, parse_kind, parse_lsf_spec, parse_spacing,
     required_typed_array1, to_value_error, with_inner,
 };
-use crate::grid::{GridInner, PyGrid};
+use crate::axis::{GridInner, PyGrid};
 
 pub(crate) enum SpectrumInner {
     F32(CoreSpectrum<f32>),
