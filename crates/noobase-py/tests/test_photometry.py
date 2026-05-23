@@ -1,4 +1,4 @@
-"""Tests for the noobase.photometry submodule and Spectrum.synthetic_photometry."""
+"""Tests for noobase.spectroscopy.synthetic_photometry and Spectrum.synthetic_photometry."""
 
 import numpy as np
 import pytest
@@ -18,7 +18,7 @@ def _centers_grid(values, dtype):
 
 
 # ---------------------------------------------------------------------------
-# Free function: noobase.photometry.synthetic
+# Free function: noobase.spectroscopy.synthetic_photometry.synthetic
 # ---------------------------------------------------------------------------
 
 
@@ -28,7 +28,7 @@ def test_synthetic_with_all_grid_args_no_error(dtype):
     transmission_grid = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
     flux = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
     transmission = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
-    band_flux, band_error, coverage = noobase.photometry.synthetic(
+    band_flux, band_error, coverage = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spectrum_grid,
         spectrum_flux=flux,
         transmission_grid=transmission_grid,
@@ -46,7 +46,7 @@ def test_synthetic_with_ndarray_transmission_grid_centers(dtype):
     transmission_grid_centers = np.array([0.5, 1.5, 2.5, 3.5], dtype=dtype)
     flux = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
     transmission = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
-    band_flux, band_error, coverage = noobase.photometry.synthetic(
+    band_flux, band_error, coverage = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spectrum_grid,
         spectrum_flux=flux,
         transmission_grid=transmission_grid_centers,
@@ -64,7 +64,7 @@ def test_synthetic_with_ndarray_transmission_grid_edges(dtype):
     transmission_grid_edges = np.array([0.0, 1.0, 2.0, 3.0, 4.0], dtype=dtype)
     flux = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
     transmission = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
-    band_flux, _band_error, coverage = noobase.photometry.synthetic(
+    band_flux, _band_error, coverage = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spectrum_grid,
         spectrum_flux=flux,
         transmission_grid=transmission_grid_edges,
@@ -81,7 +81,7 @@ def test_synthetic_with_ndarray_spectrum_grid_centers_and_edges(dtype):
     spec_centers = np.array([0.5, 1.5, 2.5, 3.5], dtype=dtype)
     transmission_grid = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
     transmission = np.array([1.0, 1.0, 1.0, 1.0], dtype=dtype)
-    band_flux_c, _e, cov_c = noobase.photometry.synthetic(
+    band_flux_c, _e, cov_c = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spec_centers,
         spectrum_flux=flux,
         transmission_grid=transmission_grid,
@@ -91,7 +91,7 @@ def test_synthetic_with_ndarray_spectrum_grid_centers_and_edges(dtype):
     assert cov_c == pytest.approx(1.0, rel=TOLERANCE)
 
     spec_edges = np.array([0.0, 1.0, 2.0, 3.0, 4.0], dtype=dtype)
-    band_flux_e, _e2, cov_e = noobase.photometry.synthetic(
+    band_flux_e, _e2, cov_e = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spec_edges,
         spectrum_flux=flux,
         transmission_grid=transmission_grid,
@@ -111,7 +111,7 @@ def test_synthetic_error_propagation(dtype):
     sigma = dtype(0.5)
     error = np.full(4, sigma, dtype=dtype)
     transmission = np.ones(4, dtype=dtype)
-    band_flux, band_error, coverage = noobase.photometry.synthetic(
+    band_flux, band_error, coverage = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spectrum_grid,
         spectrum_flux=flux,
         spectrum_error=error,
@@ -132,14 +132,14 @@ def test_synthetic_conventions_differ(dtype):
     transmission_grid = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
     flux = np.array([0.5, 1.5, 2.5, 3.5], dtype=dtype)
     transmission = np.ones(4, dtype=dtype)
-    photon_flux, _, _ = noobase.photometry.synthetic(
+    photon_flux, _, _ = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spectrum_grid,
         spectrum_flux=flux,
         transmission_grid=transmission_grid,
         transmission_values=transmission,
         convention="photon_counting",
     )
-    energy_flux, _, _ = noobase.photometry.synthetic(
+    energy_flux, _, _ = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spectrum_grid,
         spectrum_flux=flux,
         transmission_grid=transmission_grid,
@@ -156,7 +156,7 @@ def test_synthetic_return_shape():
     transmission_grid = _edges_grid([0.0, 1.0, 2.0], np.float64)
     flux = np.array([1.0, 1.0], dtype=np.float64)
     transmission = np.array([1.0, 1.0], dtype=np.float64)
-    result = noobase.photometry.synthetic(
+    result = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spectrum_grid,
         spectrum_flux=flux,
         transmission_grid=transmission_grid,
@@ -175,13 +175,13 @@ def test_synthetic_default_convention_is_photon_counting():
     transmission_grid = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], np.float64)
     flux = np.array([0.5, 1.5, 2.5, 3.5], dtype=np.float64)
     transmission = np.ones(4, dtype=np.float64)
-    default_flux, _, _ = noobase.photometry.synthetic(
+    default_flux, _, _ = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spectrum_grid,
         spectrum_flux=flux,
         transmission_grid=transmission_grid,
         transmission_values=transmission,
     )
-    explicit_flux, _, _ = noobase.photometry.synthetic(
+    explicit_flux, _, _ = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spectrum_grid,
         spectrum_flux=flux,
         transmission_grid=transmission_grid,
@@ -197,7 +197,7 @@ def test_synthetic_rejects_invalid_convention():
     flux = np.array([1.0, 1.0], dtype=np.float64)
     transmission = np.array([1.0, 1.0], dtype=np.float64)
     with pytest.raises(ValueError, match="invalid convention"):
-        noobase.photometry.synthetic(
+        noobase.spectroscopy.synthetic_photometry.synthetic(
             spectrum_grid=spectrum_grid,
             spectrum_flux=flux,
             transmission_grid=transmission_grid,
@@ -212,7 +212,7 @@ def test_synthetic_rejects_dtype_mismatch_flux_vs_transmission():
     flux = np.array([1.0, 1.0], dtype=np.float64)
     transmission = np.array([1.0, 1.0], dtype=np.float32)
     with pytest.raises(ValueError, match="transmission_values dtype"):
-        noobase.photometry.synthetic(
+        noobase.spectroscopy.synthetic_photometry.synthetic(
             spectrum_grid=spectrum_grid,
             spectrum_flux=flux,
             transmission_grid=transmission_grid,
@@ -226,7 +226,7 @@ def test_synthetic_rejects_wrong_length_spec_grid_ndarray():
     transmission = np.ones(4, dtype=np.float64)
     bad_spec_grid = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float64)
     with pytest.raises(ValueError, match="does not match paired array"):
-        noobase.photometry.synthetic(
+        noobase.spectroscopy.synthetic_photometry.synthetic(
             spectrum_grid=bad_spec_grid,
             spectrum_flux=flux,
             transmission_grid=transmission_grid,
@@ -244,7 +244,7 @@ def test_operator_construction_coverage_in_unit_interval(dtype):
     spectrum_grid = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
     transmission_grid = _edges_grid([1.0, 2.0, 3.0], dtype)
     transmission = np.array([1.0, 1.0], dtype=dtype)
-    operator = noobase.photometry.SyntheticOperator(
+    operator = noobase.spectroscopy.synthetic_photometry.SyntheticOperator(
         spectrum_grid=spectrum_grid,
         transmission_grid=transmission_grid,
         transmission_values=transmission,
@@ -265,7 +265,7 @@ def test_operator_apply_matches_synthetic(dtype, convention, with_error):
         np.array([0.1, 0.15, 0.2, 0.25, 0.3, 0.35], dtype=dtype) if with_error else None
     )
 
-    direct = noobase.photometry.synthetic(
+    direct = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=spectrum_grid,
         spectrum_flux=flux,
         spectrum_error=error,
@@ -273,7 +273,7 @@ def test_operator_apply_matches_synthetic(dtype, convention, with_error):
         transmission_values=transmission,
         convention=convention,
     )
-    operator = noobase.photometry.SyntheticOperator(
+    operator = noobase.spectroscopy.synthetic_photometry.SyntheticOperator(
         spectrum_grid=spectrum_grid,
         transmission_grid=transmission_grid,
         transmission_values=transmission,
@@ -295,7 +295,7 @@ def test_operator_requires_spectrum_grid_as_grid():
     transmission_grid = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], np.float64)
     transmission = np.ones(4, dtype=np.float64)
     with pytest.raises(ValueError, match="SyntheticOperator requires spectrum_grid"):
-        noobase.photometry.SyntheticOperator(
+        noobase.spectroscopy.synthetic_photometry.SyntheticOperator(
             spectrum_grid=spec_array,
             transmission_grid=transmission_grid,
             transmission_values=transmission,
@@ -307,7 +307,7 @@ def test_operator_accepts_ndarray_transmission_grid_length_match():
     transmission = np.ones(4, dtype=np.float64)
     # length == transmission length -> centers
     transmission_grid_centers = np.array([0.5, 1.5, 2.5, 3.5], dtype=np.float64)
-    operator = noobase.photometry.SyntheticOperator(
+    operator = noobase.spectroscopy.synthetic_photometry.SyntheticOperator(
         spectrum_grid=spectrum_grid,
         transmission_grid=transmission_grid_centers,
         transmission_values=transmission,
@@ -320,7 +320,7 @@ def test_operator_dtype_matches_channel(dtype):
     spectrum_grid = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
     transmission_grid = _edges_grid([0.0, 1.0, 2.0, 3.0, 4.0], dtype)
     transmission = np.ones(4, dtype=dtype)
-    operator = noobase.photometry.SyntheticOperator(
+    operator = noobase.spectroscopy.synthetic_photometry.SyntheticOperator(
         spectrum_grid=spectrum_grid,
         transmission_grid=transmission_grid,
         transmission_values=transmission,
@@ -340,7 +340,7 @@ def test_spectrum_synthetic_photometry_matches_free_function(dtype):
     transmission_grid = _edges_grid([1.0, 2.0, 3.0], dtype)
     transmission = np.array([0.5, 0.7], dtype=dtype)
     spectrum = noobase.spectroscopy.Spectrum(wavelength=wavelength, flux=flux)
-    free = noobase.photometry.synthetic(
+    free = noobase.spectroscopy.synthetic_photometry.synthetic(
         spectrum_grid=wavelength,
         spectrum_flux=flux,
         transmission_grid=transmission_grid,

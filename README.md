@@ -101,7 +101,7 @@ if coverage >= coverage_threshold:
 For MCMC hot loops, build a `SyntheticOperator` once and reuse it for every model evaluation:
 
 ```python
-operator = noobase.photometry.SyntheticOperator(
+operator = noobase.spectroscopy.synthetic_photometry.SyntheticOperator(
     spectrum_grid=spectrum.wavelength,
     transmission_grid=transmission_grid,
     transmission_values=transmission_values,

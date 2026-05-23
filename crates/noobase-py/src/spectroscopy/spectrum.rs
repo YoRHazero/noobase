@@ -542,15 +542,8 @@ impl PySpectrum {
     }
 }
 
-pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule>) -> PyResult<()> {
-    let spectroscopy = PyModule::new(py, "noobase._core.spectroscopy")?;
-    spectroscopy.setattr("__package__", "noobase._core")?;
+pub(crate) fn register_into(spectroscopy: &Bound<'_, PyModule>) -> PyResult<()> {
     spectroscopy.add_class::<PySpectrum>()?;
-    parent.add_submodule(&spectroscopy)?;
-
-    let sys_modules = py.import("sys")?.getattr("modules")?;
-    sys_modules.set_item("noobase._core.spectroscopy", &spectroscopy)?;
-
     Ok(())
 }
 

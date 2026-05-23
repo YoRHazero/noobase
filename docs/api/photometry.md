@@ -4,8 +4,8 @@ Synthetic photometry through transmission curves.
 
 ## Synthetic Photometry
 
-::: noobase._core.photometry.synthetic
+::: noobase._core.spectroscopy.synthetic_photometry.synthetic
 
 ## SyntheticOperator
 
-::: noobase._core.photometry.SyntheticOperator
+::: noobase._core.spectroscopy.synthetic_photometry.SyntheticOperator

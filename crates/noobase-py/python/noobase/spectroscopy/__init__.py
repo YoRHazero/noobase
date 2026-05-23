@@ -2,4 +2,6 @@
 
 from noobase._core.spectroscopy import Spectrum
 
-__all__ = ["Spectrum"]
+from . import synthetic_photometry
+
+__all__ = ["Spectrum", "synthetic_photometry"]

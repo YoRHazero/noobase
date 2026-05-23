@@ -211,7 +211,10 @@ impl IntoOperatorInner for core_photometry::SyntheticOperator<f64> {
 /// The operator caches both the deterministic weights and the geometric
 /// coverage (available via the ``coverage`` property), so per-spectrum
 /// calls do not recompute either.
-#[pyclass(name = "SyntheticOperator", module = "noobase._core.photometry")]
+#[pyclass(
+    name = "SyntheticOperator",
+    module = "noobase._core.spectroscopy.synthetic_photometry"
+)]
 pub struct PySyntheticOperator {
     inner: SyntheticOperatorInner,
 }
@@ -421,13 +424,16 @@ fn apply_impl<'py, T: Scalar>(
     )
 }
 
-pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule>) -> PyResult<()> {
-    let photometry = PyModule::new(py, "noobase._core.photometry")?;
-    photometry.setattr("__package__", "noobase._core")?;
-    photometry.add_class::<PySyntheticOperator>()?;
-    photometry.add_function(wrap_pyfunction!(synthetic_function, &photometry)?)?;
-    parent.add_submodule(&photometry)?;
+pub(crate) fn build_submodule<'py>(
+    py: Python<'py>,
+    parent: &Bound<'py, PyModule>,
+) -> PyResult<()> {
+    let module = PyModule::new(py, "noobase._core.spectroscopy.synthetic_photometry")?;
+    module.setattr("__package__", "noobase._core.spectroscopy")?;
+    module.add_class::<PySyntheticOperator>()?;
+    module.add_function(wrap_pyfunction!(synthetic_function, &module)?)?;
+    parent.add_submodule(&module)?;
     let sys_modules = py.import("sys")?.getattr("modules")?;
-    sys_modules.set_item("noobase._core.photometry", &photometry)?;
+    sys_modules.set_item("noobase._core.spectroscopy.synthetic_photometry", &module)?;
     Ok(())
 }
