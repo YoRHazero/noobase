@@ -1,5 +1,5 @@
 use ::noobase::Grid as CoreGrid;
-use ::noobase::bins::overlap as core_overlap;
+use ::noobase::axis::overlap as core_overlap;
 use ndarray::Array1;
 use numpy::IntoPyArray;
 use pyo3::exceptions::PyValueError;

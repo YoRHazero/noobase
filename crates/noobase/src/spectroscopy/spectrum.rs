@@ -1,7 +1,7 @@
 use ndarray::{Array1, ArrayView1};
 use thiserror::Error;
 
-use crate::bins::{Grid, GridKind, overlap};
+use crate::axis::{Grid, GridKind, overlap};
 use crate::float::Float;
 
 #[derive(Debug, Error, PartialEq)]
@@ -227,7 +227,7 @@ fn bin_count<T: Float>(wavelength: &Grid<T>) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bins::{GridKind, Spacing};
+    use crate::axis::{GridKind, Spacing};
     use ndarray::array;
 
     const TOL: f64 = 1e-12;

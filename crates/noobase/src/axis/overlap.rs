@@ -1,6 +1,6 @@
 use ndarray::{Array1, ArrayView1};
 
-use crate::bins::Grid;
+use crate::axis::Grid;
 use crate::float::Float;
 
 /// Two-pointer sweep over source and target bin edges. The visitor is invoked
@@ -199,7 +199,7 @@ pub fn coverage<T: Float>(source: &Grid<T>, target: &Grid<T>) -> Array1<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bins::{GridKind, Spacing};
+    use crate::axis::{GridKind, Spacing};
     use ndarray::array;
 
     const TOL: f64 = 1e-12;

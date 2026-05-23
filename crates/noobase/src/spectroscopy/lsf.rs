@@ -46,7 +46,7 @@
 use ndarray::Array1;
 use thiserror::Error;
 
-use crate::bins::{GridKind, Spacing};
+use crate::axis::{GridKind, Spacing};
 use crate::convolve::{Boundary, GaussianSampling, Normalization, conv1d, gaussian1d, normal_cdf};
 use crate::float::Float;
 use crate::spectroscopy::Spectrum;
@@ -286,7 +286,7 @@ fn lower_bound<T: Float>(centers: ndarray::ArrayView1<T>, target: f64) -> usize 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bins::{Grid, GridKind, Spacing};
+    use crate::axis::{Grid, GridKind, Spacing};
     use ndarray::Array1;
 
     fn approx_eq(a: f64, b: f64, tol: f64) -> bool {

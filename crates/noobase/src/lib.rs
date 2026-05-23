@@ -1,10 +1,10 @@
 mod float;
 
-pub mod bins;
+pub mod axis;
 pub mod convolve;
 pub mod image;
 pub mod photometry;
 pub mod spectroscopy;
 
-pub use bins::{Grid, GridError, GridKind, Spacing};
+pub use axis::{Grid, GridError, GridKind, Spacing};
 pub use float::Float;

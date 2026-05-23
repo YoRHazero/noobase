@@ -1,7 +1,7 @@
 use ndarray::{Array1, ArrayView1};
 use thiserror::Error;
 
-use crate::bins::Grid;
+use crate::axis::Grid;
 use crate::float::Float;
 
 /// Photometric integration convention.
@@ -443,7 +443,7 @@ impl<T: Float> SyntheticOperator<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bins::{GridKind, Spacing};
+    use crate::axis::{GridKind, Spacing};
     use ndarray::array;
 
     const TOL: f64 = 1e-12;

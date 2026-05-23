@@ -29,7 +29,7 @@ noobase = "0.0.2"
 
 ```rust
 use ndarray::{Array1, Array2};
-use noobase::bins::{Grid, GridKind};
+use noobase::axis::{Grid, GridKind};
 use noobase::image;
 use noobase::spectroscopy::{LsfSpec, Spectrum};
 
