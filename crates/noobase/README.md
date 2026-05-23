@@ -14,16 +14,17 @@ noobase = "0.0.2"
 
 ## Public surface
 
-- `bins::Grid` — 1-D monotonic axis
-- `bins::overlap` — overlap-weighted rebin primitives
-- `convolve` — pure 1-D / axis / 2-D correlation kernels, `gaussian1d`, and NaN-aware normalized convolution wrappers
+- `axis::Grid` — 1-D monotonic axis
+- `axis::overlap` — overlap-weighted rebin primitives
+- `convolve` — pure 1-D / axis / 2-D correlation kernels, `gaussian1d`, and NaN-as-missing renormalized variants (shared by `image` and `spectroscopy::lsf`)
 - `spectroscopy::Spectrum` — spectrum container with optional error / mask
 - `spectroscopy::LsfSpec` + `Spectrum::convolve_lsf` — Gaussian LSF broadening for noise-free spectral templates
-- `photometry::{synthetic, SyntheticOperator}` — synthetic photometry
+- `spectroscopy::synthetic_photometry::{synthetic, SyntheticOperator}` — synthetic photometry through transmission curves
 - `image::reproject_exact` — surface-brightness-conserving image reprojection via planar polygon clipping (rayon-parallel)
 - `image::{convolve_psf, convolve_gaussian_axis}` — true 2-D PSF convolution and 1-D Gaussian axis correlation / matched filtering
 - `image::stamp::build_stamp` — point-source recenter + fixed-window stamp extraction (sub-pixel centroid recorded, not applied)
 - `image::psf` — oversampled-ePSF / extended-PSF construction stack: `build_epsf`, `build_extended_psf`, plus the `robust_combine` / `solve_flux_background` / `stitch_psf` leaves and the `render` / `accumulate` adjoint pair
+- `Float` — single trait re-export at the crate root for downstream generics; every other public name is reached through its submodule (e.g. `noobase::axis::Grid`, not `noobase::Grid`)
 
 ## Examples
 

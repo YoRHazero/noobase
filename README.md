@@ -7,19 +7,16 @@ Foundational pure-function utilities for astronomy analysis. Rust core with Pyth
 ## Features
 
 - f32/f64 native dispatch (no implicit casts in hot paths)
-- `Grid` — 1-D monotonic axis (centers / edges, linear / log)
-- `Spectrum` — wavelength + flux + optional error + optional mask
-- `bins::overlap` — overlap-weighted rebin, variance propagation, coverage
-- `convolve` — pure 1-D / axis / 2-D correlation kernels, Gaussian kernel construction, and NaN-aware normalized-convolution wrappers
-- `Spectrum::rebin` — flux + error + mask through the same operator
-- `Spectrum::to_f_nu` / `to_f_lambda` — flux density convention conversion
-- `Spectrum::convolve_lsf` — Gaussian line-spread-function broadening for noise-free templates (constant resolving power or constant velocity dispersion)
-- `photometry::synthetic` + `SyntheticOperator` — synthetic photometry through transmission curves (e.g. JWST NIRCam filters)
+- `axis::Grid` — 1-D monotonic axis (centers / edges, linear / log)
+- `axis::overlap` — overlap-weighted rebin, variance propagation, coverage
+- `convolve` — pure 1-D / axis / 2-D correlation kernels, `gaussian1d` constructor, and NaN-as-missing renormalized variants; exposed in Python as `noobase.convolve`
+- `spectroscopy::Spectrum` — wavelength + flux + optional error + optional mask, with `rebin` / `to_f_nu` / `to_f_lambda` / `convolve_lsf` (Gaussian LSF broadening for noise-free templates, constant resolving power or constant velocity dispersion)
+- `spectroscopy::synthetic_photometry::{synthetic, SyntheticOperator}` — synthetic photometry through transmission curves (e.g. JWST NIRCam filters)
 - `image::reproject_exact` — surface-brightness-conserving image reprojection via planar polygon clipping (rayon-parallel; WCS handling stays in the caller's astropy / gwcs)
 - `image.make_pixel_corners` — Python-side helper that turns a pair of `pixel_to_world_values` / `world_to_pixel_values` callables (e.g. `astropy.wcs` or `gwcs`) into the corner array consumed by `reproject_exact`
 - `image::convolve_psf` — true 2-D PSF convolution with NaN-as-missing edge / mask renormalization
 - `image::convolve_gaussian_axis` — Gaussian axis correlation for grism-style line matched filtering
-- `image::build_stamp` — recenter a point-source cutout and extract a fixed-size stamp; the sub-pixel centroid is recorded as natural dither phase, not applied, so the noise stays uncorrelated
+- `image::stamp::build_stamp` — recenter a point-source cutout and extract a fixed-size stamp; the sub-pixel centroid is recorded as natural dither phase, not applied, so the noise stays uncorrelated
 - `image::psf::build_epsf` — oversampled ePSF from a stack of under-sampled stamps, solved as a forward-model super-resolution problem (projected Landweber / Irani–Peleg; flux, background and centroid nuisance solved jointly)
 - `image::psf::build_extended_psf` — bright-star wing stacking plus a core↔wing raised-cosine feather, encircled-energy normalised, into a full diffraction-spike/wing extended PSF
 - `image::psf::{robust_combine, solve_flux_background, stitch_psf}` — lower-level leaves: sign-agnostic σ-clip / median stack reducer, exact 2×2 weighted LLSQ flux+background solver, core↔wing stitch

@@ -42,9 +42,11 @@ band_flux, band_error, coverage = spectrum.synthetic_photometry(
 
 ## What's in the box
 
-- `Grid` — 1-D monotonic axis (linear / log, centers / edges)
-- `Spectrum` — wavelength + flux + optional error + optional mask, with rebinning, flux density convention conversion, and noise-free-template LSF broadening via `Spectrum.convolve_lsf`
-- `photometry.SyntheticOperator` — cached synthetic photometry suited for MCMC hot loops
+- `axis.Grid` — 1-D monotonic axis (linear / log, centers / edges)
+- `axis.overlap.{rebin, rebin_variance, coverage}` — overlap-weighted rebin primitives between two axis grids
+- `convolve.{gaussian1d, conv1d, conv_axis, conv2d, conv2d_renorm, conv_axis_renorm}` — bare correlation kernels plus NaN-as-missing renormalized variants
+- `spectroscopy.Spectrum` — wavelength + flux + optional error + optional mask, with rebinning, flux density convention conversion, and noise-free-template LSF broadening via `Spectrum.convolve_lsf`
+- `spectroscopy.synthetic_photometry.{synthetic, SyntheticOperator}` — synthetic photometry through transmission curves; the cached operator is suited for MCMC hot loops
 - `image.reproject_exact` — surface-brightness-conserving image reprojection via planar polygon clipping (rayon-parallel; WCS handling stays in the caller's astropy / gwcs)
 - `image.make_pixel_corners` — turn a pair of `pixel_to_world_values` / `world_to_pixel_values` callables (astropy.wcs or gwcs) into the corner array consumed by `reproject_exact`, with optional `coarse_step` for expensive WCS chains
 - `image.convolve_psf` — true 2-D PSF convolution with NaN-as-missing edge / mask renormalization
