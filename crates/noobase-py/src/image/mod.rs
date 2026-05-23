@@ -1,3 +1,6 @@
+mod psf;
+mod stamp;
+
 use ::noobase::convolve::{Boundary, Normalization};
 use ::noobase::image as core_image;
 use ndarray::{Array2, ArrayView3, Axis};
@@ -300,12 +303,10 @@ pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule
     image.add_function(wrap_pyfunction!(reproject_exact_function, &image)?)?;
     image.add_function(wrap_pyfunction!(convolve_psf_function, &image)?)?;
     image.add_function(wrap_pyfunction!(convolve_gaussian_axis_function, &image)?)?;
+    stamp::register_into(&image)?;
+    psf::build_submodule(py, &image)?;
     parent.add_submodule(&image)?;
     let sys_modules = py.import("sys")?.getattr("modules")?;
     sys_modules.set_item("noobase._core.image", &image)?;
-    // Phase 8: build_stamp/StampResult (image::stamp) at the image
-    // level + the nested noobase._core.image.psf submodule (image::psf),
-    // mirroring the Rust core module paths.
-    crate::psf::register(py, &image)?;
     Ok(())
 }

@@ -3,7 +3,6 @@ use pyo3::prelude::*;
 mod axis;
 mod convert;
 mod image;
-mod psf;
 mod spectroscopy;
 
 #[pymodule]
