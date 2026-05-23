@@ -2,6 +2,9 @@
 
 Image reprojection, convolution, and point-source stamp extraction.
 
+Point-source PSF construction lives in the nested
+[PSF](psf.md) page (`noobase.image.psf`).
+
 ## Pixel Corners
 
 ::: noobase.image.make_pixel_corners

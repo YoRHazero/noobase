@@ -14,4 +14,4 @@ this site focuses on the Python-facing package.
 - [Convolve](convolve.md)
 - [Spectroscopy](spectroscopy.md) — `Spectrum` and `synthetic_photometry`
 - [Image](image.md)
-- [PSF](psf.md)
+    - [PSF](psf.md) — `noobase.image.psf`

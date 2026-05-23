@@ -51,8 +51,10 @@ nav = [
     { "Axis" = "api/axis.md" },
     { "Convolve" = "api/convolve.md" },
     { "Spectroscopy" = "api/spectroscopy.md" },
-    { "Image" = "api/image.md" },
-    { "PSF" = "api/psf.md" },
+    { "Image" = [
+      "api/image.md",
+      { "PSF" = "api/psf.md" },
+    ] },
   ] },
   { "Development" = "development.md" },
 ]

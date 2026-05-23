@@ -54,4 +54,4 @@ PyO3 bindings.
 - [Convolve](api/convolve.md): correlation kernels and Gaussian constructor
 - [Spectroscopy](api/spectroscopy.md): `Spectrum` and synthetic photometry
 - [Image](api/image.md): reprojection, convolution, and stamp extraction
-- [PSF](api/psf.md): ePSF and extended-PSF construction
+    - [PSF](api/psf.md): ePSF and extended-PSF construction (`noobase.image.psf`)
