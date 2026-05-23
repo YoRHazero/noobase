@@ -52,7 +52,6 @@ PyO3 bindings.
 
 - [Axis](api/axis.md): `Grid` and bin-overlap rebinning primitives
 - [Convolve](api/convolve.md): correlation kernels and Gaussian constructor
-- [Spectroscopy](api/spectroscopy.md): `Spectrum`
-- [Photometry](api/photometry.md): synthetic photometry
+- [Spectroscopy](api/spectroscopy.md): `Spectrum` and synthetic photometry
 - [Image](api/image.md): reprojection, convolution, and stamp extraction
 - [PSF](api/psf.md): ePSF and extended-PSF construction

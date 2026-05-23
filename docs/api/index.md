@@ -12,7 +12,6 @@ this site focuses on the Python-facing package.
 
 - [Axis](axis.md)
 - [Convolve](convolve.md)
-- [Spectroscopy](spectroscopy.md)
-- [Photometry](photometry.md)
+- [Spectroscopy](spectroscopy.md) — `Spectrum` and `synthetic_photometry`
 - [Image](image.md)
 - [PSF](psf.md)
