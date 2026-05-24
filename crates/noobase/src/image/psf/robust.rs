@@ -214,24 +214,25 @@ pub fn robust_combine<T: Float>(
     // are walked row-major, so the flat index is `row * width + column`.
     // `pixel_count == 0` (h == 0 or w == 0) makes the range empty, so the
     // `% width` / `/ width` below never divide by zero.
+    //
+    // Rayon's nested `unzip` (relying on `ParallelExtend<(A, B)>` for
+    // `(Vec<A>, Vec<B>)`) splits the per-pixel triple straight into three
+    // parallel-built `Vec`s — no intermediate `Vec<(f64, f64, u32)>` and
+    // no serial post-pass.
     let pixel_count = height * width;
-    let per_pixel: Vec<(f64, f64, u32)> = (0..pixel_count)
+    let ((combined_values, weight_values), count_values): (
+        (Vec<f64>, Vec<f64>),
+        Vec<u32>,
+    ) = (0..pixel_count)
         .into_par_iter()
         .map(|flat_index| {
             let row = flat_index / width;
             let column = flat_index % width;
-            combine_one_pixel(&stack, weight.as_ref(), row, column, sample_count, method)
+            let (combined, combined_weight, survivors) =
+                combine_one_pixel(&stack, weight.as_ref(), row, column, sample_count, method);
+            ((combined, combined_weight), survivors)
         })
-        .collect();
-
-    let mut combined_values = Vec::with_capacity(pixel_count);
-    let mut weight_values = Vec::with_capacity(pixel_count);
-    let mut count_values = Vec::with_capacity(pixel_count);
-    for (combined, combined_weight, survivors) in per_pixel {
-        combined_values.push(combined);
-        weight_values.push(combined_weight);
-        count_values.push(survivors);
-    }
+        .unzip();
 
     Ok(RobustCombined {
         combined: Array2::from_shape_vec((height, width), combined_values)
