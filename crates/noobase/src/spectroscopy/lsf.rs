@@ -235,7 +235,12 @@ impl<T: Float> Spectrum<T> {
             // (same truncation convention as gaussian1d's tap radius).
             let mut numerator = 0.0_f64;
             let mut denominator = 0.0_f64;
-            let mut bin = lower_bound(centers, low_wave);
+            // `centers` is `Grid::values()` over an owned `Array1`, so
+            // the underlying storage is always contiguous.
+            let mut bin = centers
+                .as_slice()
+                .expect("centers is contiguous")
+                .partition_point(|c| c.to_f64().expect("wavelength fits in f64") < low_wave);
             while bin < bin_count {
                 let center = centers[bin].to_f64().expect("wavelength fits in f64");
                 if center > high_wave {
@@ -264,23 +269,6 @@ impl<T: Float> Spectrum<T> {
         }
         output
     }
-}
-
-/// Smallest index `i` with `centers[i].to_f64() >= target`
-/// (`centers` is strictly increasing).
-#[inline]
-fn lower_bound<T: Float>(centers: ndarray::ArrayView1<T>, target: f64) -> usize {
-    let mut low = 0usize;
-    let mut high = centers.len();
-    while low < high {
-        let mid = (low + high) / 2;
-        if centers[mid].to_f64().expect("wavelength fits in f64") < target {
-            low = mid + 1;
-        } else {
-            high = mid;
-        }
-    }
-    low
 }
 
 #[cfg(test)]
