@@ -1,10 +1,17 @@
 //! Statistical helpers shared across image-pipeline modules.
 //!
-//! Centralizes the small set of robust statistics (currently: median) so
-//! their algorithm and "no-data" policy stay in one place. The empty-slice
-//! policy is intentionally externalized: callers pick the default that
-//! fits their context (e.g. `0.0` for a background offset, `f64::NAN` for
-//! a missing measurement).
+//! Centralizes the small set of robust statistics (median, MAD-based
+//! sigma) so their algorithm and "no-data" policy stay in one place. The
+//! empty-slice policy for primitives like [`median_in_place`] is
+//! intentionally externalized: callers pick the default that fits their
+//! context (e.g. `0.0` for a background offset, `f64::NAN` for a missing
+//! measurement). The higher-level [`mad_sigma`] picks `NaN` itself since
+//! a robust scale is undefined on no data.
+
+/// `1 / 0.6745`: scales a median-absolute-deviation to the equivalent
+/// Gaussian standard deviation (the asymptotic conversion at the normal
+/// distribution).
+pub(crate) const MAD_TO_SIGMA: f64 = 1.482_602_218_505_602;
 
 /// Median of `values` in O(n) average time via `select_nth_unstable_by`.
 /// Returns `None` for an empty slice so the caller can choose the no-data
@@ -32,6 +39,32 @@ pub(crate) fn median_in_place(values: &mut [f64]) -> Option<f64> {
         let lower = left.iter().copied().reduce(f64::max).unwrap();
         Some(0.5 * (lower + *pivot))
     }
+}
+
+/// Robust Gaussian-equivalent scale of a sample:
+/// `MAD_TO_SIGMA * median(|x - median(x)|)`.
+///
+/// Returns `f64::NAN` for an empty input (a robust scale is undefined
+/// with no data). Callers must filter non-finite samples upstream —
+/// [`median_in_place`] panics on `NaN`.
+///
+/// Allocates one `Vec<f64>` of length `samples.len()` and reuses it as
+/// scratch for both the center and the deviations.
+pub(crate) fn mad_sigma(samples: &[f64]) -> f64 {
+    if samples.is_empty() {
+        return f64::NAN;
+    }
+    let mut scratch = samples.to_vec();
+    // `unwrap` is safe: `scratch.len() == samples.len() >= 1`.
+    let center = median_in_place(&mut scratch).unwrap();
+    // `scratch` now holds the same multiset of values in a partitioned
+    // (not sorted) order. For `|x - center|` the order is irrelevant, so
+    // we reuse the buffer instead of reallocating.
+    for value in scratch.iter_mut() {
+        *value = (*value - center).abs();
+    }
+    let mad = median_in_place(&mut scratch).unwrap();
+    MAD_TO_SIGMA * mad
 }
 
 #[cfg(test)]
@@ -93,6 +126,46 @@ mod tests {
         // lower middle.
         let mut values = vec![1.0, 5.0, 5.0, 5.0, 5.0, 5.0];
         assert_eq!(median_in_place(&mut values), Some(5.0));
+    }
+
+    #[test]
+    fn mad_sigma_empty_returns_nan() {
+        assert!(mad_sigma(&[]).is_nan());
+    }
+
+    #[test]
+    fn mad_sigma_odd_length_matches_hand_calculation() {
+        // samples = [1, 2, 3, 4, 5]; median = 3;
+        // deviations = [2, 1, 0, 1, 2]; MAD = 1; sigma = MAD_TO_SIGMA.
+        let got = mad_sigma(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        assert!((got - MAD_TO_SIGMA).abs() < 1e-15);
+    }
+
+    #[test]
+    fn mad_sigma_even_length_matches_hand_calculation() {
+        // samples = [1, 2, 3, 4]; median = 2.5;
+        // deviations = [1.5, 0.5, 0.5, 1.5]; MAD = (0.5+1.5)/2 = 1;
+        // sigma = MAD_TO_SIGMA.
+        let got = mad_sigma(&[1.0, 2.0, 3.0, 4.0]);
+        assert!((got - MAD_TO_SIGMA).abs() < 1e-15);
+    }
+
+    #[test]
+    fn mad_sigma_invariant_under_permutation() {
+        // Robust scale is a property of the multiset; permuting the input
+        // must not change the result (bit-equal in floating point because
+        // the deviations are reduced through the same median routine).
+        let baseline = mad_sigma(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+        let permuted = mad_sigma(&[7.0, 1.0, 5.0, 3.0, 6.0, 2.0, 4.0]);
+        assert_eq!(baseline, permuted);
+    }
+
+    #[test]
+    fn mad_sigma_scales_linearly() {
+        // sigma(k * x) = |k| * sigma(x) — basic equivariance check.
+        let baseline = mad_sigma(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        let scaled = mad_sigma(&[3.0, 6.0, 9.0, 12.0, 15.0]);
+        assert!((scaled - 3.0 * baseline).abs() < 1e-14);
     }
 
     #[test]

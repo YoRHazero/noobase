@@ -153,7 +153,7 @@ use ndarray::{Array1, Array2, Array3, ArrayView2, ArrayView3, Axis};
 use thiserror::Error;
 
 use crate::float::Float;
-use crate::image::stats::median_in_place;
+use crate::image::stats::{mad_sigma, median_in_place};
 
 use super::accumulate::accumulate;
 use super::nuisance::{refine_nuisance, solve_flux_background};
@@ -179,9 +179,6 @@ const POWER_ITERATIONS: usize = 12;
 const SEED_CLIP_KAPPA: f64 = 3.0;
 /// Clip-iteration cap for the seed `robust_combine`.
 const SEED_CLIP_MAX_ITER: usize = 5;
-/// `1 / 0.6745`: scales a median-absolute-deviation to a Gaussian sigma.
-const MAD_TO_SIGMA: f64 = 1.482_602_218_505_602;
-
 /// Per-pixel residual reweighting applied each outer round (decision 7
 /// / fork 3). Deliberately *not* named "robust": this is the core-SR
 /// per-pixel down-weighting, distinct from Phase 4 `robust_combine`'s
@@ -708,7 +705,8 @@ fn reweight_factor(
 }
 
 /// `1.4826 * median(|r - median(r)|)` over the finite residuals of the
-/// `ok` stars (the no-base-weight global scale).
+/// `ok` stars (the no-base-weight global scale). Gathers the eligible
+/// samples and delegates to [`mad_sigma`].
 fn global_mad_sigma(residual: &Array3<f64>, ok: &Array1<bool>) -> f64 {
     let (batch, height, width) = residual.dim();
     let mut samples: Vec<f64> = Vec::new();
@@ -725,13 +723,7 @@ fn global_mad_sigma(residual: &Array3<f64>, ok: &Array1<bool>) -> f64 {
             }
         }
     }
-    if samples.is_empty() {
-        return f64::NAN;
-    }
-    let center = median_in_place(&mut samples.clone()).unwrap_or(f64::NAN);
-    let mut deviations: Vec<f64> = samples.iter().map(|x| (x - center).abs()).collect();
-    let mad = median_in_place(&mut deviations).unwrap_or(f64::NAN);
-    MAD_TO_SIGMA * mad
+    mad_sigma(&samples)
 }
 
 /// `W_eff = W_base x factor` (fork 3). `None` only when there is no
