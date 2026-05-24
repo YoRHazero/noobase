@@ -43,6 +43,7 @@ use ndarray::{Array2, ArrayView2};
 use thiserror::Error;
 
 use crate::float::Float;
+use crate::image::stats::median_in_place;
 
 /// Default FWHM (pixels) of the Gaussian centroid window.
 pub const DEFAULT_WEIGHT_FWHM: f64 = 3.0;
@@ -216,7 +217,7 @@ pub fn build_stamp<T: Float>(
             }
         }
     }
-    let background = median(&mut border_values);
+    let background = median_in_place(&mut border_values).unwrap_or(0.0);
 
     // --- Centroid iteration (init-quality rough estimate). ---
     let sigma = weight_fwhm / (2.0 * (2.0 * 2_f64.ln()).sqrt());
@@ -340,23 +341,6 @@ pub fn build_stamp<T: Float>(
         delta: (delta_row, delta_column),
         origin: (origin_row, origin_column),
     }))
-}
-
-/// Median of the given values, ignoring nothing (the caller is expected
-/// to have filtered non-finite / masked entries already). Returns `0.0`
-/// for an empty slice so an all-masked border contributes no background
-/// offset. Mutates the slice (in-place partial sort).
-fn median(values: &mut [f64]) -> f64 {
-    if values.is_empty() {
-        return 0.0;
-    }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let length = values.len();
-    if length % 2 == 1 {
-        values[length / 2]
-    } else {
-        0.5 * (values[length / 2 - 1] + values[length / 2])
-    }
 }
 
 #[cfg(test)]

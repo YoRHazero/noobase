@@ -153,6 +153,7 @@ use ndarray::{Array1, Array2, Array3, ArrayView2, ArrayView3, Axis};
 use thiserror::Error;
 
 use crate::float::Float;
+use crate::image::stats::median_in_place;
 
 use super::accumulate::accumulate;
 use super::nuisance::{refine_nuisance, solve_flux_background};
@@ -727,24 +728,10 @@ fn global_mad_sigma(residual: &Array3<f64>, ok: &Array1<bool>) -> f64 {
     if samples.is_empty() {
         return f64::NAN;
     }
-    let center = median(&mut samples.clone());
+    let center = median_in_place(&mut samples.clone()).unwrap_or(f64::NAN);
     let mut deviations: Vec<f64> = samples.iter().map(|x| (x - center).abs()).collect();
-    let mad = median(&mut deviations);
+    let mad = median_in_place(&mut deviations).unwrap_or(f64::NAN);
     MAD_TO_SIGMA * mad
-}
-
-/// Median of a slice (sorts in place; NaN-free by construction here).
-fn median(values: &mut [f64]) -> f64 {
-    if values.is_empty() {
-        return f64::NAN;
-    }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let mid = values.len() / 2;
-    if values.len() % 2 == 1 {
-        values[mid]
-    } else {
-        0.5 * (values[mid - 1] + values[mid])
-    }
 }
 
 /// `W_eff = W_base x factor` (fork 3). `None` only when there is no
@@ -958,10 +945,7 @@ fn border_ring_median(stamp: &ArrayView2<f64>, stamp_size: usize) -> f64 {
             ring.push(right);
         }
     }
-    if ring.is_empty() {
-        return 0.0;
-    }
-    median(&mut ring)
+    median_in_place(&mut ring).unwrap_or(0.0)
 }
 
 #[cfg(test)]

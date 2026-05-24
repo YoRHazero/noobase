@@ -97,6 +97,7 @@ use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::float::Float;
+use crate::image::stats::median_in_place;
 
 /// How [`robust_combine`] reduces the stamp axis.
 ///
@@ -303,7 +304,7 @@ fn combine_one_pixel<T: Float>(
 /// the sum of the valid samples' weights (= count when equal-weight).
 fn combine_median(values: &[f64], weights: &[f64]) -> (f64, f64, u32) {
     let mut sorted = values.to_vec();
-    let combined = median_of(&mut sorted);
+    let combined = median_in_place(&mut sorted).unwrap_or(f64::NAN);
     let weight_sum: f64 = weights.iter().sum();
     (combined, weight_sum, values.len() as u32)
 }
@@ -342,7 +343,7 @@ fn combine_clipped_mean(
         // the final estimate below is inverse-variance weighted
         // (decision 7).
         let mut sorted = survivors.clone();
-        let center = median_of(&mut sorted);
+        let center = median_in_place(&mut sorted).unwrap_or(f64::NAN);
 
         // Clip scale: root-mean-square deviation about that same median
         // (self-consistent with the `|x - center|` test below).
@@ -395,22 +396,6 @@ fn combine_clipped_mean(
         weight_sum,
         survivor_count as u32,
     )
-}
-
-/// Median of a non-empty slice of finite values. Sorts in place (the
-/// caller never needs the original order). The gather step drops every
-/// non-finite sample, so `partial_cmp` never sees `NaN`.
-fn median_of(values: &mut [f64]) -> f64 {
-    if values.is_empty() {
-        return f64::NAN; // defensive; callers guarantee non-empty
-    }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let length = values.len();
-    if length % 2 == 1 {
-        values[length / 2]
-    } else {
-        0.5 * (values[length / 2 - 1] + values[length / 2])
-    }
 }
 
 #[cfg(test)]

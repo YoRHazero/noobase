@@ -187,6 +187,7 @@ use ndarray::{Array1, Array2, Array3, ArrayView2, ArrayView3, Axis};
 use thiserror::Error;
 
 use crate::float::Float;
+use crate::image::stats::median_in_place;
 
 use super::kernel::catmull_rom_sample;
 use super::nuisance::solve_flux_background;
@@ -604,21 +605,6 @@ fn azimuthal_average(
     }
 }
 
-/// Robust median of a slice (sorts in place; NaN-free by construction at
-/// every call site here).
-fn median(values: &mut [f64]) -> f64 {
-    if values.is_empty() {
-        return f64::NAN;
-    }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let mid = values.len() / 2;
-    if values.len() % 2 == 1 {
-        values[mid]
-    } else {
-        0.5 * (values[mid - 1] + values[mid])
-    }
-}
-
 /// Robust per-stamp sky: the median of the finite (and, when a weight is
 /// given, positive-weight) pixels whose center falls in the
 /// `(r_in, r_out)` native annulus about the stamp center. `0.0` when the
@@ -655,10 +641,7 @@ fn annulus_background(
             ring.push(value);
         }
     }
-    if ring.is_empty() {
-        return 0.0;
-    }
-    median(&mut ring)
+    median_in_place(&mut ring).unwrap_or(0.0)
 }
 
 /// Aperture-photometry fallback scale (sub-decision A): the sum of
