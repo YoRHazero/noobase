@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 
+mod aperture;
 mod axis;
 mod convert;
 mod convolve;
@@ -12,5 +13,6 @@ fn _core(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     convolve::build_submodule(py, module)?;
     spectroscopy::build_submodule(py, module)?;
     image::build_submodule(py, module)?;
+    aperture::build_submodule(py, module)?;
     Ok(())
 }
