@@ -25,8 +25,6 @@ use super::config::{Connectivity, LabelInput};
 /// the same shape as the input mask.
 pub(super) struct Annuli {
     pub inner: Array2<bool>,
-    // Consumed by the gradient stop in the next commit.
-    #[allow(dead_code)]
     pub outer: Array2<bool>,
 }
 

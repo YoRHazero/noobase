@@ -1,9 +1,9 @@
 //! Region-growing driver entry point.
 //!
 //! The greedy heap loop, [`Connectivity`]-driven neighbour expansion,
-//! cutout-edge handling, segmentation-label gating, and the SNR stop
-//! criterion (with hysteresis) are in place; the radial-gradient stop
-//! lands in the next commit. Growth runs until any enabled stop fires,
+//! cutout-edge handling, segmentation-label gating, and both stop
+//! criteria (SNR and radial-gradient, each with independent
+//! hysteresis) are in place. Growth runs until any enabled stop fires,
 //! the mask touches the cutout edge, or the heap empties (the latter
 //! two are reported as [`StopReason::Filled`]).
 
@@ -276,7 +276,9 @@ pub fn grow_mask(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aperture::region_growing::config::{Connectivity, SnrStop, StopCriterion};
+    use crate::aperture::region_growing::config::{
+        Connectivity, GradientStop, SnrStop, StopCriterion,
+    };
     use ndarray::Array2;
 
     /// Default test config with a never-firing SNR stop: the threshold
@@ -513,6 +515,68 @@ mod tests {
         assert!(
             !touched_edge,
             "SnrBelow must fire before the mask reaches the edge"
+        );
+    }
+
+    /// Two equal-amplitude Gaussian blobs on the same row, separated by
+    /// a low-flux basin. With only the gradient stop enabled, the mask
+    /// seeded at blob A must terminate before its inner annulus climbs
+    /// the slope of blob B.
+    #[test]
+    fn gradient_stop_prevents_crossing_into_neighbour_blob() {
+        // Generous cutout with the blob pair centred along its
+        // mid-row: the mask has plenty of margin in every direction
+        // other than the one toward blob B, so the gradient flip is
+        // the only realistic exit besides reaching blob B itself.
+        let rows = 31;
+        let cols = 31;
+        let sigma = 2.0_f64;
+        let amplitude = 100.0_f64;
+        let blob_a = (15, 11);
+        let blob_b = (15, 21);
+
+        let mut data = Array2::<f64>::zeros((rows, cols));
+        for &(blob_row, blob_col) in &[blob_a, blob_b] {
+            for row in 0..rows {
+                for col in 0..cols {
+                    let d_row = row as f64 - blob_row as f64;
+                    let d_col = col as f64 - blob_col as f64;
+                    data[(row, col)] += amplitude
+                        * (-(d_row * d_row + d_col * d_col) / (2.0 * sigma * sigma)).exp();
+                }
+            }
+        }
+
+        let config = GrowthConfig {
+            connectivity: Connectivity::Eight,
+            stop: StopCriterion {
+                snr: None,
+                gradient: Some(GradientStop {
+                    ratio_threshold: 1.0,
+                    hysteresis: 2,
+                }),
+            },
+            min_pixels_before_stop_check: 5,
+            check_interval: 1,
+            annulus_thickness: 2,
+        };
+
+        let result =
+            grow_mask(data.view(), None, None, &[blob_a], &config).expect("growth must succeed");
+
+        assert_eq!(result.stop_reason, StopReason::GradientFlip);
+        assert!(result.mask[blob_a], "seed (blob A centre) must be in mask");
+        assert!(
+            !result.mask[blob_b],
+            "blob B centre must NOT be reached — gradient must stop the crossing",
+        );
+
+        let touched_edge = (0..rows)
+            .any(|row| result.mask[(row, 0)] || result.mask[(row, cols - 1)])
+            || (0..cols).any(|col| result.mask[(0, col)] || result.mask[(rows - 1, col)]);
+        assert!(
+            !touched_edge,
+            "GradientFlip must fire before the mask reaches the edge",
         );
     }
 }
