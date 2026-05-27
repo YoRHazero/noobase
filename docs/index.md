@@ -20,7 +20,7 @@ Rust:
 
 ```toml
 [dependencies]
-noobase = { git = "https://github.com/YoRHazero/noobase.git", tag = "v0.0.3" }
+noobase = { git = "https://github.com/YoRHazero/noobase.git", tag = "v0.0.4" }
 ```
 
 ## Python Quick Start

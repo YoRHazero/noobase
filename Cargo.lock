@@ -85,7 +85,7 @@ dependencies = [
 
 [[package]]
 name = "noobase"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "libm",
  "ndarray",
@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "noobase-py"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "ndarray",
  "noobase",

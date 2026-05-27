@@ -9,7 +9,7 @@ See the [project README](https://github.com/YoRHazero/noobase#readme) for overvi
 
 ```toml
 [dependencies]
-noobase = "0.0.3"
+noobase = "0.0.4"
 ```
 
 ## Public surface
