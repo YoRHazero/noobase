@@ -26,6 +26,9 @@
 //! Rust side; default values are a science-scenario policy and live at
 //! the Python binding boundary.
 
+// Wired into grow_mask by the next commit (SNR stop).
+#[allow(dead_code)]
+mod annulus;
 pub mod config;
 pub mod grow;
 pub mod result;
