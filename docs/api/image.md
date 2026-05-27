@@ -3,7 +3,9 @@
 Image reprojection, convolution, and point-source stamp extraction.
 
 Point-source PSF construction lives in the nested
-[PSF](psf.md) page (`noobase.image.psf`).
+[PSF](psf.md) page (`noobase.image.psf`). Adaptive aperture mask
+construction lives in the nested [Aperture](aperture.md) page
+(`noobase.aperture`).
 
 ## Pixel Corners
 

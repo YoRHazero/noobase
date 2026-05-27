@@ -15,3 +15,4 @@ this site focuses on the Python-facing package.
 - [Spectroscopy](spectroscopy.md) — `Spectrum` and `synthetic_photometry`
 - [Image](image.md)
     - [PSF](psf.md) — `noobase.image.psf`
+    - [Aperture](aperture.md) — `noobase.aperture`

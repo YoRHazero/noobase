@@ -54,6 +54,7 @@ nav = [
     { "Image" = [
       "api/image.md",
       { "PSF" = "api/psf.md" },
+      { "Aperture" = "api/aperture.md" },
     ] },
   ] },
   { "Development" = "development.md" },
