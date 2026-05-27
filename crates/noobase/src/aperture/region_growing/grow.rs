@@ -1,19 +1,21 @@
 //! Region-growing driver entry point.
 //!
 //! The greedy heap loop, [`Connectivity`]-driven neighbour expansion,
-//! cutout-edge handling, and segmentation-label gating are in place;
-//! annulus extraction and stop-criterion evaluation land in subsequent
-//! commits. Until those arrive, growth continues until the mask touches
-//! the cutout edge or the heap empties — both are reported as
-//! [`StopReason::Filled`].
+//! cutout-edge handling, segmentation-label gating, and the SNR stop
+//! criterion (with hysteresis) are in place; the radial-gradient stop
+//! lands in the next commit. Growth runs until any enabled stop fires,
+//! the mask touches the cutout edge, or the heap empties (the latter
+//! two are reported as [`StopReason::Filled`]).
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use ndarray::{Array2, ArrayView2};
 
+use super::annulus::extract_annuli;
 use super::config::{Connectivity, GrowthConfig, LabelInput};
 use super::result::{GrowError, GrowthResult, StopReason};
+use super::stop::StopState;
 
 /// Internal heap entry. The newtype exists solely to let
 /// [`BinaryHeap`] accept `f64`: the standard library requires
@@ -124,12 +126,35 @@ pub fn grow_mask(
     seed_pixels: &[(usize, usize)],
     config: &GrowthConfig,
 ) -> Result<GrowthResult, GrowError> {
-    // Reserved for later commits (err <-> SnrStop binding).
-    let _ = err;
-
     let rows = data.shape()[0];
     let cols = data.shape()[1];
     let shape = (rows, cols);
+
+    // --- Config invariants (independent of data shapes). ---
+    if config.check_interval == 0 {
+        return Err(GrowError::CheckIntervalZero);
+    }
+    if config.stop.snr.is_none() && config.stop.gradient.is_none() {
+        return Err(GrowError::NoStopCriterion);
+    }
+    // The err / SnrStop binding is bidirectional: enabling one without
+    // the other is a caller bug, not a degraded mode.
+    match (err.as_ref(), config.stop.snr) {
+        (Some(_), None) => return Err(GrowError::ErrWithoutSnrStop),
+        (None, Some(_)) => return Err(GrowError::SnrStopWithoutErr),
+        _ => {}
+    }
+
+    // --- Shape invariants. ---
+    if let Some(err_view) = err.as_ref() {
+        let err_shape = (err_view.shape()[0], err_view.shape()[1]);
+        if err_shape != shape {
+            return Err(GrowError::ErrShapeMismatch {
+                err_shape,
+                data_shape: shape,
+            });
+        }
+    }
 
     // Validate label shape and allowed-nonempty before any seed check,
     // because the seed-on-allowed check below indexes into `label.map`.
@@ -190,6 +215,7 @@ pub fn grow_mask(
     }
 
     let mut n_iterations: usize = 0;
+    let mut stop_state = StopState::new();
 
     loop {
         if touches_edge {
@@ -226,31 +252,74 @@ pub fn grow_mask(
             config.connectivity,
             &mut heap,
         );
+
+        if n_iterations >= config.min_pixels_before_stop_check
+            && n_iterations.is_multiple_of(config.check_interval)
+        {
+            let annuli = extract_annuli(
+                mask.view(),
+                label.as_ref(),
+                config.connectivity,
+                config.annulus_thickness,
+            );
+            if let Some(reason) = stop_state.evaluate(&annuli, data, err, &config.stop) {
+                return Ok(GrowthResult {
+                    mask,
+                    stop_reason: reason,
+                    n_iterations,
+                });
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aperture::region_growing::config::{Connectivity, StopCriterion};
+    use crate::aperture::region_growing::config::{Connectivity, SnrStop, StopCriterion};
     use ndarray::Array2;
 
+    /// Default test config with a never-firing SNR stop: the threshold
+    /// is so low that SNR > threshold always, and the hysteresis is so
+    /// large that no realistic test could accumulate enough violations.
+    /// Used by tests that want to exercise non-stop behaviour (edge
+    /// fill, seed errors, label gating) without forcing each one to
+    /// hand-build a config that satisfies [`GrowError::NoStopCriterion`].
     fn trivial_config() -> GrowthConfig {
         GrowthConfig {
             connectivity: Connectivity::Eight,
-            stop: StopCriterion::default(),
+            stop: StopCriterion {
+                snr: Some(SnrStop {
+                    threshold: 0.5,
+                    hysteresis: usize::MAX,
+                }),
+                gradient: None,
+            },
             min_pixels_before_stop_check: 0,
             check_interval: 1,
             annulus_thickness: 1,
         }
     }
 
+    /// Constant-1 err matching `shape`, satisfying the SnrStop-requires-err
+    /// invariant for tests that use [`trivial_config`].
+    fn ones_err(shape: (usize, usize)) -> Array2<f64> {
+        Array2::<f64>::from_elem(shape, 1.0)
+    }
+
     #[test]
     fn flat_field_grows_until_edge_touch() {
         let data = Array2::<f64>::from_elem((5, 5), 1.0);
+        let err = ones_err((5, 5));
         let seeds = [(2, 2)];
-        let result = grow_mask(data.view(), None, None, &seeds, &trivial_config())
-            .expect("flat-field growth must succeed");
+        let result = grow_mask(
+            data.view(),
+            Some(err.view()),
+            None,
+            &seeds,
+            &trivial_config(),
+        )
+        .expect("flat-field growth must succeed");
 
         assert_eq!(result.stop_reason, StopReason::Filled);
         assert!(result.n_iterations >= 1);
@@ -271,8 +340,16 @@ mod tests {
     #[test]
     fn seed_out_of_bounds_errors() {
         let data = Array2::<f64>::zeros((3, 3));
+        let err_array = ones_err((3, 3));
         let seeds = [(3, 0)];
-        let err = grow_mask(data.view(), None, None, &seeds, &trivial_config()).unwrap_err();
+        let err = grow_mask(
+            data.view(),
+            Some(err_array.view()),
+            None,
+            &seeds,
+            &trivial_config(),
+        )
+        .unwrap_err();
         assert_eq!(
             err,
             GrowError::SeedOutOfBounds {
@@ -324,9 +401,16 @@ mod tests {
             map: label_map.view(),
             allowed: vec![0, 1],
         };
+        let err = ones_err((rows, cols));
         let seeds = [blob_a];
-        let result = grow_mask(data.view(), None, Some(label), &seeds, &trivial_config())
-            .expect("label-gated growth must succeed");
+        let result = grow_mask(
+            data.view(),
+            Some(err.view()),
+            Some(label),
+            &seeds,
+            &trivial_config(),
+        )
+        .expect("label-gated growth must succeed");
 
         // Core invariant: no pixel with label 2 may be admitted.
         for row in 0..rows {
@@ -348,19 +432,87 @@ mod tests {
     #[test]
     fn seed_on_disallowed_label_errors() {
         let data = Array2::<f64>::zeros((3, 3));
+        let err_array = ones_err((3, 3));
         let label_map = Array2::<i32>::zeros((3, 3));
         let label = LabelInput {
             map: label_map.view(),
             allowed: vec![1],
         };
         let seeds = [(1, 1)];
-        let err = grow_mask(data.view(), None, Some(label), &seeds, &trivial_config()).unwrap_err();
+        let err = grow_mask(
+            data.view(),
+            Some(err_array.view()),
+            Some(label),
+            &seeds,
+            &trivial_config(),
+        )
+        .unwrap_err();
         assert_eq!(
             err,
             GrowError::SeedOnDisallowedLabel {
                 seed: (1, 1),
                 label: 0,
             }
+        );
+    }
+
+    /// Centered Gaussian source with constant per-pixel err; the SNR
+    /// stop must fire before the mask reaches the cutout edge.
+    #[test]
+    fn snr_stop_fires_on_gaussian_with_per_pixel_err() {
+        let n = 21;
+        let center = 10;
+        let sigma = 2.0_f64;
+        let amplitude = 100.0_f64;
+
+        let mut data = Array2::<f64>::zeros((n, n));
+        for row in 0..n {
+            for col in 0..n {
+                let d_row = row as f64 - center as f64;
+                let d_col = col as f64 - center as f64;
+                data[(row, col)] =
+                    amplitude * (-(d_row * d_row + d_col * d_col) / (2.0 * sigma * sigma)).exp();
+            }
+        }
+        let err = ones_err((n, n));
+
+        let config = GrowthConfig {
+            connectivity: Connectivity::Eight,
+            stop: StopCriterion {
+                snr: Some(SnrStop {
+                    threshold: 2.0,
+                    hysteresis: 3,
+                }),
+                gradient: None,
+            },
+            min_pixels_before_stop_check: 5,
+            check_interval: 1,
+            annulus_thickness: 1,
+        };
+
+        let result = grow_mask(
+            data.view(),
+            Some(err.view()),
+            None,
+            &[(center, center)],
+            &config,
+        )
+        .expect("growth must succeed");
+
+        assert_eq!(result.stop_reason, StopReason::SnrBelow);
+        assert!(result.mask[(center, center)], "seed must be in mask");
+
+        // If SnrBelow really fired, the mask must not have leaked all
+        // the way to the cutout edge (otherwise Filled would have won).
+        let touched_edge = (0..n).any(|i| {
+            result.mask[(0, i)]
+                || result.mask[(n - 1, i)]
+                || result.mask[(i, 0)]
+                || result.mask[(i, n - 1)]
+        });
+        assert!(
+            !touched_edge,
+            "SnrBelow must fire before the mask reaches the edge"
         );
     }
 }

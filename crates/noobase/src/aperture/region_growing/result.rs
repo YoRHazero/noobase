@@ -61,4 +61,31 @@ pub enum GrowError {
     /// reported `label` is the actual value at the seed coordinate.
     #[error("seed pixel {seed:?} sits on label {label}, which is not in allowed")]
     SeedOnDisallowedLabel { seed: (usize, usize), label: i32 },
+    /// `check_interval` is zero. The growth loop evaluates stops on a
+    /// `n_iterations % check_interval == 0` schedule, which would panic
+    /// for a zero divisor.
+    #[error("config.check_interval must be >= 1")]
+    CheckIntervalZero,
+    /// No stop criterion is enabled. At least one of SNR or gradient
+    /// must be set; otherwise growth can only ever terminate with
+    /// [`StopReason::Filled`], which is the failure outcome.
+    #[error("at least one stop criterion (SNR or gradient) must be enabled")]
+    NoStopCriterion,
+    /// SNR stop is enabled but no error array was supplied. The two are
+    /// strictly bidirectionally bound — either both present or both
+    /// absent — so a missing `err` is a caller bug, not a degraded
+    /// mode.
+    #[error("err must be supplied when SNR stop is enabled")]
+    SnrStopWithoutErr,
+    /// An error array was supplied but SNR stop is not enabled. The two
+    /// are strictly bidirectionally bound; a dangling `err` would be
+    /// silently ignored and is therefore rejected up front.
+    #[error("err must not be supplied when SNR stop is disabled")]
+    ErrWithoutSnrStop,
+    /// The error array shape does not match the data shape.
+    #[error("err shape {err_shape:?} must equal data shape {data_shape:?}")]
+    ErrShapeMismatch {
+        err_shape: (usize, usize),
+        data_shape: (usize, usize),
+    },
 }
