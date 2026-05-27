@@ -24,6 +24,7 @@ noobase = "0.0.3"
 - `image::{convolve_psf, convolve_gaussian_axis}` — true 2-D PSF convolution and 1-D Gaussian axis correlation / matched filtering
 - `image::stamp::build_stamp` — point-source recenter + fixed-window stamp extraction (sub-pixel centroid recorded, not applied)
 - `image::psf` — oversampled-ePSF / extended-PSF construction stack: `build_epsf`, `build_extended_psf`, plus the `robust_combine` / `solve_flux_background` / `stitch_psf` leaves and the `render` / `accumulate` adjoint pair
+- `aperture::region_growing::grow_mask` — adaptive aperture mask via heap-driven greedy growth from one or more seed pixels, terminated by an inner-annulus SNR stop and a radial-gradient stop (each with independent hysteresis); optional `LabelInput` whitelist gates which segmentation labels the mask may enter
 - `Float` — single trait re-export at the crate root for downstream generics; every other public name is reached through its submodule (e.g. `noobase::axis::Grid`, not `noobase::Grid`)
 
 ## Examples

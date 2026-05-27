@@ -20,6 +20,7 @@ Foundational pure-function utilities for astronomy analysis. Rust core with Pyth
 - `image::psf::build_epsf` — oversampled ePSF from a stack of under-sampled stamps, solved as a forward-model super-resolution problem (projected Landweber / Irani–Peleg; flux, background and centroid nuisance solved jointly)
 - `image::psf::build_extended_psf` — bright-star wing stacking plus a core↔wing raised-cosine feather, encircled-energy normalised, into a full diffraction-spike/wing extended PSF
 - `image::psf::{robust_combine, solve_flux_background, stitch_psf}` — lower-level leaves: sign-agnostic σ-clip / median stack reducer, exact 2×2 weighted LLSQ flux+background solver, core↔wing stitch
+- `aperture::region_growing::grow_mask` — adaptive aperture mask from a seed pixel, grown by a heap-driven greedy loop against inner/outer-annulus SNR and radial-gradient stop criteria (each with independent hysteresis); optional segmentation-label whitelist keeps the mask inside the source's pre-computed segmentation
 
 ## Install
 
@@ -182,6 +183,29 @@ extended = noobase.image.psf.build_extended_psf(
     oversample=oversample,
 )
 model = extended.extended  # ExtendedPsf: .core (oversampled) + .wing (native)
+```
+
+Grow an adaptive aperture mask for one source. The seed pixel is typically the source's peak from a coarse segmentation step (e.g. `scikit-image.measure.label`); the growth then terminates either when the cumulative inner-annulus signal-to-noise drops below `snr_threshold` or when the radial profile flips (outer-annulus mean exceeds inner-annulus mean), each with hysteresis to suppress single-check noise. `stop_reason == "filled"` is the failure outcome — the cutout was too small for the source:
+
+```python
+import noobase
+
+# `data`: 2-D float64 science cutout (single band).
+# `err`: same shape, 1-sigma error.
+# `label_map`: int32 segmentation map; `1` is this source, `0` is background.
+result = noobase.aperture.grow_mask(
+    data,
+    seed_pixels=[(seed_row, seed_col)],
+    err=err,
+    label_map=label_map,
+    label_allowed=[0, 1],          # mask may occupy background + this source
+    # snr_threshold left unset -> auto-enabled at 2.0 because err is provided.
+    gradient_ratio_threshold=1.0,  # outer/inner > 1.0 == radial profile flipped
+)
+
+if result.stop_reason == "filled":
+    raise RuntimeError("aperture growth hit the cutout edge; enlarge the cutout")
+mask = result.mask  # bool ndarray, same shape as `data`
 ```
 
 ## Workspace layout

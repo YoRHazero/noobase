@@ -54,6 +54,7 @@ band_flux, band_error, coverage = spectrum.synthetic_photometry(
 - `image.build_stamp` — recenter a point-source cutout into a fixed stamp (sub-pixel centroid recorded, not applied)
 - `image.psf.build_epsf` — oversampled ePSF from a stack of under-sampled stamps via projected Landweber / Irani–Peleg super-resolution
 - `image.psf.build_extended_psf` — bright-star wing stacking + core↔wing stitch into an encircled-energy-normalised extended PSF, with `robust_combine` / `solve_flux_background` / `stitch_psf` exposed as leaves
+- `aperture.grow_mask` — adaptive aperture mask grown by a heap-driven greedy loop from one or more seed pixels, terminated by an inner-annulus SNR stop and a radial-gradient stop (each with independent hysteresis); accepts an optional segmentation `label_map` + `label_allowed` whitelist to keep the mask inside the source's pre-computed segmentation
 
 ## Convolution examples
 
