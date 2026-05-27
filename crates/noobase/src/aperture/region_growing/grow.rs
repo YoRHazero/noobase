@@ -1,16 +1,91 @@
 //! Region-growing driver entry point.
 //!
-//! This file is currently a **skeleton stub**: it only validates that
-//! every seed pixel is in bounds and returns a mask with exactly the
-//! seed pixels set, [`StopReason::Filled`], and `n_iterations = 0`. The
-//! heap loop, connectivity-driven expansion, label gating, annulus
-//! extraction, and stop-criterion evaluation are added in subsequent
-//! commits.
+//! The greedy heap loop, [`Connectivity`]-driven neighbour expansion,
+//! and cutout-edge handling are in place; label gating, annulus
+//! extraction, and stop-criterion evaluation land in subsequent commits.
+//! Until those arrive, growth continues until the mask touches the
+//! cutout edge or the heap empties — both are reported as
+//! [`StopReason::Filled`].
+
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 
 use ndarray::{Array2, ArrayView2};
 
-use super::config::{GrowthConfig, LabelInput};
+use super::config::{Connectivity, GrowthConfig, LabelInput};
 use super::result::{GrowError, GrowthResult, StopReason};
+
+/// Internal heap entry. The newtype exists solely to let
+/// [`BinaryHeap`] accept `f64`: the standard library requires
+/// `T: Ord` at the type level, and `f64` only implements `PartialOrd`.
+/// `total_cmp` gives a deterministic total order; non-finite fluxes are
+/// filtered at push time so we never see NaN here.
+#[derive(Debug, Clone, Copy)]
+struct HeapItem {
+    flux: f64,
+    row: usize,
+    col: usize,
+}
+
+impl Ord for HeapItem {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.flux.total_cmp(&other.flux)
+    }
+}
+
+impl PartialOrd for HeapItem {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for HeapItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.flux == other.flux
+    }
+}
+
+impl Eq for HeapItem {}
+
+/// Push every in-bounds, unmasked, finite-flux neighbour of `(row, col)`
+/// onto `heap`. Duplicates (same coordinate pushed multiple times via
+/// different parents) are not de-duplicated here — they are skipped at
+/// pop time by the `mask[(row, col)]` check.
+fn push_unvisited_neighbors(
+    row: usize,
+    col: usize,
+    data: ArrayView2<f64>,
+    mask: &Array2<bool>,
+    connectivity: Connectivity,
+    heap: &mut BinaryHeap<HeapItem>,
+) {
+    let rows = mask.shape()[0];
+    let cols = mask.shape()[1];
+    for &(d_row, d_col) in connectivity.offsets() {
+        let next_row_signed = row as isize + d_row;
+        let next_col_signed = col as isize + d_col;
+        if next_row_signed < 0 || next_col_signed < 0 {
+            continue;
+        }
+        let next_row = next_row_signed as usize;
+        let next_col = next_col_signed as usize;
+        if next_row >= rows || next_col >= cols {
+            continue;
+        }
+        if mask[(next_row, next_col)] {
+            continue;
+        }
+        let flux = data[(next_row, next_col)];
+        if !flux.is_finite() {
+            continue;
+        }
+        heap.push(HeapItem {
+            flux,
+            row: next_row,
+            col: next_col,
+        });
+    }
+}
 
 /// Grow a boolean source mask outward from one or more seed pixels.
 ///
@@ -43,10 +118,8 @@ pub fn grow_mask(
     seed_pixels: &[(usize, usize)],
     config: &GrowthConfig,
 ) -> Result<GrowthResult, GrowError> {
-    // Inputs reserved for later commits (heap loop, label gating, stop
-    // criteria). Silence unused-variable warnings without bending the
-    // public signature.
-    let _ = (err, label, config);
+    // Reserved for later commits (err <-> SnrStop binding, label gating).
+    let _ = (err, label);
 
     let rows = data.shape()[0];
     let cols = data.shape()[1];
@@ -59,15 +132,55 @@ pub fn grow_mask(
     }
 
     let mut mask = Array2::<bool>::from_elem(shape, false);
+    let mut heap: BinaryHeap<HeapItem> = BinaryHeap::new();
+    let mut touches_edge = false;
+
+    let on_edge = |row: usize, col: usize| -> bool {
+        row == 0 || row + 1 == rows || col == 0 || col + 1 == cols
+    };
+
     for &(row, col) in seed_pixels {
+        if mask[(row, col)] {
+            // Duplicate seed coordinate: silently collapse.
+            continue;
+        }
         mask[(row, col)] = true;
+        if on_edge(row, col) {
+            touches_edge = true;
+        }
+        push_unvisited_neighbors(row, col, data, &mask, config.connectivity, &mut heap);
     }
 
-    Ok(GrowthResult {
-        mask,
-        stop_reason: StopReason::Filled,
-        n_iterations: 0,
-    })
+    let mut n_iterations: usize = 0;
+
+    loop {
+        if touches_edge {
+            return Ok(GrowthResult {
+                mask,
+                stop_reason: StopReason::Filled,
+                n_iterations,
+            });
+        }
+        let Some(item) = heap.pop() else {
+            return Ok(GrowthResult {
+                mask,
+                stop_reason: StopReason::Filled,
+                n_iterations,
+            });
+        };
+        let (row, col) = (item.row, item.col);
+        if mask[(row, col)] {
+            // Lazy dedup: the same coordinate may have been pushed
+            // multiple times via different parents.
+            continue;
+        }
+        mask[(row, col)] = true;
+        n_iterations += 1;
+        if on_edge(row, col) {
+            touches_edge = true;
+        }
+        push_unvisited_neighbors(row, col, data, &mask, config.connectivity, &mut heap);
+    }
 }
 
 #[cfg(test)]
@@ -87,24 +200,26 @@ mod tests {
     }
 
     #[test]
-    fn stub_returns_seed_only_mask_and_filled() {
-        let data = Array2::<f64>::zeros((3, 3));
-        let seeds = [(1, 1)];
+    fn flat_field_grows_until_edge_touch() {
+        let data = Array2::<f64>::from_elem((5, 5), 1.0);
+        let seeds = [(2, 2)];
         let result = grow_mask(data.view(), None, None, &seeds, &trivial_config())
-            .expect("stub must succeed");
+            .expect("flat-field growth must succeed");
 
         assert_eq!(result.stop_reason, StopReason::Filled);
-        assert_eq!(result.n_iterations, 0);
-        for row in 0..3 {
-            for col in 0..3 {
-                let expected = (row, col) == (1, 1);
-                assert_eq!(
-                    result.mask[(row, col)],
-                    expected,
-                    "mask[{row},{col}] should be {expected}",
-                );
-            }
-        }
+        assert!(result.n_iterations >= 1);
+        assert!(result.mask[(2, 2)], "seed must be preserved");
+
+        // Structural invariant: every `true` in the mask is either a
+        // seed (1 here) or was admitted by the heap loop.
+        let true_count = result.mask.iter().filter(|&&v| v).count();
+        assert_eq!(true_count, 1 + result.n_iterations);
+
+        // Filled must mean the mask reached the cutout edge.
+        let touched_edge = (0..5).any(|i| {
+            result.mask[(0, i)] || result.mask[(4, i)] || result.mask[(i, 0)] || result.mask[(i, 4)]
+        });
+        assert!(touched_edge, "Filled requires the mask to have hit an edge");
     }
 
     #[test]

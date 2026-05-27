@@ -13,6 +13,27 @@ pub enum Connectivity {
     Eight,
 }
 
+impl Connectivity {
+    /// Per-connectivity neighbour offsets as `(d_row, d_col)`. The
+    /// returned slice is the canonical adjacency set shared between
+    /// heap-driven mask expansion and morphological annulus dilation.
+    pub fn offsets(self) -> &'static [(isize, isize)] {
+        match self {
+            Connectivity::Four => &[(-1, 0), (1, 0), (0, -1), (0, 1)],
+            Connectivity::Eight => &[
+                (-1, -1),
+                (-1, 0),
+                (-1, 1),
+                (0, -1),
+                (0, 1),
+                (1, -1),
+                (1, 0),
+                (1, 1),
+            ],
+        }
+    }
+}
+
 /// Signal-to-noise stop criterion evaluated on the inner annulus.
 ///
 /// Fires when the cumulative SNR inside the inner annulus
