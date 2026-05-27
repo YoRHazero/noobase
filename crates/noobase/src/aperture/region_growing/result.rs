@@ -46,4 +46,19 @@ pub enum GrowError {
         seed: (usize, usize),
         shape: (usize, usize),
     },
+    /// The label map shape does not match the data shape.
+    #[error("label map shape {label_shape:?} must equal data shape {data_shape:?}")]
+    LabelShapeMismatch {
+        label_shape: (usize, usize),
+        data_shape: (usize, usize),
+    },
+    /// `LabelInput::allowed` was supplied but empty. An empty allowed
+    /// list would forbid every pixel — almost certainly a caller bug, so
+    /// we reject it rather than silently growing nothing.
+    #[error("label.allowed must be non-empty")]
+    LabelAllowedEmpty,
+    /// A seed pixel sits on a label that is not in the allowed list. The
+    /// reported `label` is the actual value at the seed coordinate.
+    #[error("seed pixel {seed:?} sits on label {label}, which is not in allowed")]
+    SeedOnDisallowedLabel { seed: (usize, usize), label: i32 },
 }
