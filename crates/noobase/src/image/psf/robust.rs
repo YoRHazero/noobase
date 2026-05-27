@@ -220,10 +220,8 @@ pub fn robust_combine<T: Float>(
     // parallel-built `Vec`s — no intermediate `Vec<(f64, f64, u32)>` and
     // no serial post-pass.
     let pixel_count = height * width;
-    let ((combined_values, weight_values), count_values): (
-        (Vec<f64>, Vec<f64>),
-        Vec<u32>,
-    ) = (0..pixel_count)
+    let ((combined_values, weight_values), count_values): ((Vec<f64>, Vec<f64>), Vec<u32>) = (0
+        ..pixel_count)
         .into_par_iter()
         .map(|flat_index| {
             let row = flat_index / width;

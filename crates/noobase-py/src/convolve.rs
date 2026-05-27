@@ -8,7 +8,7 @@
 //! and convolutions directly in Python.
 
 use ::noobase::convolve::{
-    self as core_convolve, Boundary, conv1d, conv2d, conv2d_renorm, conv_axis, conv_axis_renorm,
+    self as core_convolve, Boundary, conv_axis, conv_axis_renorm, conv1d, conv2d, conv2d_renorm,
 };
 use ndarray::{Array1, Array2, Axis};
 use numpy::IntoPyArray;
@@ -17,8 +17,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
 use crate::convert::{
-    Scalar, dispatch_array, is_float32_dtype, parse_axis, parse_boundary,
-    parse_gaussian_sampling, parse_normalization, required_typed_array1, required_typed_array2,
+    Scalar, dispatch_array, is_float32_dtype, parse_axis, parse_boundary, parse_gaussian_sampling,
+    parse_normalization, required_typed_array1, required_typed_array2,
 };
 
 const DEFAULT_TRUNCATE: f64 = 4.0;

@@ -5,8 +5,8 @@ use numpy::IntoPyArray;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::convert::{Scalar, typed_array1, with_grid_pair};
 use crate::axis::PyGrid;
+use crate::convert::{Scalar, typed_array1, with_grid_pair};
 
 /// Flux-density-conserving rebin from a source grid onto a target grid.
 ///

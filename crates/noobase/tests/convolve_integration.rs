@@ -10,10 +10,10 @@
 //! outside-the-crate contract.
 
 use ndarray::{Array1, Array2, Axis};
+use noobase::axis::{Grid, GridKind};
 use noobase::convolve::{Boundary, GaussianSampling, Normalization, conv2d, gaussian1d};
 use noobase::image::{convolve_gaussian_axis, convolve_psf};
 use noobase::spectroscopy::{LsfSpec, Spectrum};
-use noobase::axis::{Grid, GridKind};
 
 fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
     (a - b).abs() <= tol * a.abs().max(b.abs()).max(1.0)

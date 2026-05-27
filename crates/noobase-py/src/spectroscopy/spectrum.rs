@@ -1,18 +1,18 @@
+use ::noobase::spectroscopy::Spectrum as CoreSpectrum;
 use ::noobase::spectroscopy::synthetic_photometry as core_photometry;
 use ::noobase::spectroscopy::synthetic_photometry::PhotometryConvention;
-use ::noobase::spectroscopy::Spectrum as CoreSpectrum;
 use ndarray::Array1;
 use numpy::{PyArrayDescr, ToPyArray, dtype};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::axis::{GridInner, PyGrid};
 use crate::convert::{
     GridChannel, Scalar, band_triple, build_grid_from_any, coerce_to_grid, dispatch_array,
     dtype_mismatch_error, grid_channel, grid_dtype_name, optional_bool_array1,
     optional_typed_array1, parse_convention, parse_kind, parse_lsf_spec, parse_spacing,
     required_typed_array1, to_value_error, with_inner,
 };
-use crate::axis::{GridInner, PyGrid};
 
 pub(crate) enum SpectrumInner {
     F32(CoreSpectrum<f32>),

@@ -6,11 +6,11 @@ use numpy::{PyArrayDescr, PyReadonlyArray1, dtype};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::axis::{GridInner, PyGrid};
 use crate::convert::{
     GridChannel, Scalar, band_pair, band_triple, coerce_to_grid, dispatch_array, grid_channel,
     parse_convention, required_typed_array1, to_value_error, with_inner,
 };
-use crate::axis::{GridInner, PyGrid};
 
 /// Extract a required channel-`T` array, or the photometry-family
 /// "`<what>` dtype must match `<reference>` (`<dtype>`)" `ValueError`.
@@ -424,10 +424,7 @@ fn apply_impl<'py, T: Scalar>(
     )
 }
 
-pub(crate) fn build_submodule<'py>(
-    py: Python<'py>,
-    parent: &Bound<'py, PyModule>,
-) -> PyResult<()> {
+pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule>) -> PyResult<()> {
     let module = PyModule::new(py, "noobase._core.spectroscopy.synthetic_photometry")?;
     module.setattr("__package__", "noobase._core.spectroscopy")?;
     module.add_class::<PySyntheticOperator>()?;

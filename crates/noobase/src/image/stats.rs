@@ -26,10 +26,7 @@ pub(crate) fn median_in_place(values: &mut [f64]) -> Option<f64> {
         return None;
     }
     let mid = length / 2;
-    let compare = |a: &f64, b: &f64| {
-        a.partial_cmp(b)
-            .expect("non-finite value in median input")
-    };
+    let compare = |a: &f64, b: &f64| a.partial_cmp(b).expect("non-finite value in median input");
     let (left, pivot, _) = values.select_nth_unstable_by(mid, compare);
     if length % 2 == 1 {
         Some(*pivot)
