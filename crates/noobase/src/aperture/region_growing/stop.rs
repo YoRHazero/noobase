@@ -46,15 +46,15 @@ impl StopState {
         err: Option<ArrayView2<f64>>,
         criterion: &StopCriterion,
     ) -> Option<StopReason> {
-        if let Some(snr) = criterion.snr {
-            if let Some(reason) = self.evaluate_snr(annuli, data, err, snr) {
-                return Some(reason);
-            }
+        if let Some(snr) = criterion.snr
+            && let Some(reason) = self.evaluate_snr(annuli, data, err, snr)
+        {
+            return Some(reason);
         }
-        if let Some(gradient) = criterion.gradient {
-            if let Some(reason) = self.evaluate_gradient(annuli, data, gradient) {
-                return Some(reason);
-            }
+        if let Some(gradient) = criterion.gradient
+            && let Some(reason) = self.evaluate_gradient(annuli, data, gradient)
+        {
+            return Some(reason);
         }
         None
     }

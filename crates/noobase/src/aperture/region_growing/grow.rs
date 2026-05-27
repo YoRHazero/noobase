@@ -78,10 +78,10 @@ fn push_unvisited_neighbors(
         if mask[(next_row, next_col)] {
             continue;
         }
-        if let Some(label) = label {
-            if !label.allowed.contains(&label.map[(next_row, next_col)]) {
-                continue;
-            }
+        if let Some(label) = label
+            && !label.allowed.contains(&label.map[(next_row, next_col)])
+        {
+            continue;
         }
         let flux = data[(next_row, next_col)];
         if !flux.is_finite() {
