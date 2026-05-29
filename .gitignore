@@ -25,6 +25,7 @@ wheels/
 # Personal Claude config
 CLAUDE.local.md
 .claude/settings.local.json
+.claude/*.lock
 
 # Personal planning notes
 ROADMAP.md

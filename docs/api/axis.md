@@ -2,20 +2,18 @@
 
 1-D monotonic axis (bin grid) and overlap-based bin reductions.
 
-## Grid
-
 ::: noobase.axis.Grid
 
 ## Overlap
 
-### Rebin
-
 ::: noobase._core.axis.overlap.rebin
-
-### Rebin Variance
+    options:
+      heading_level: 3
 
 ::: noobase._core.axis.overlap.rebin_variance
-
-### Coverage
+    options:
+      heading_level: 3
 
 ::: noobase._core.axis.overlap.coverage
+    options:
+      heading_level: 3

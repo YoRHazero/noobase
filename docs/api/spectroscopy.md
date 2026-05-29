@@ -2,8 +2,6 @@
 
 Spectroscopy-domain containers and operations.
 
-## Spectrum
-
 ::: noobase.spectroscopy.Spectrum
 
 ## Synthetic Photometry
@@ -11,10 +9,10 @@ Spectroscopy-domain containers and operations.
 Synthetic photometry through transmission curves. Lives at
 `noobase.spectroscopy.synthetic_photometry`.
 
-### synthetic
-
 ::: noobase._core.spectroscopy.synthetic_photometry.synthetic
-
-### SyntheticOperator
+    options:
+      heading_level: 3
 
 ::: noobase._core.spectroscopy.synthetic_photometry.SyntheticOperator
+    options:
+      heading_level: 3
