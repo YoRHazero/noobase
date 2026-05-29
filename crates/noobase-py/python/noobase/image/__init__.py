@@ -1,6 +1,7 @@
 """Image-domain primitives (planar, no WCS)."""
 
 from noobase._core.image import (
+    ReprojectResult,
     StampResult,
     build_stamp,
     convolve_gaussian_axis,
@@ -12,6 +13,7 @@ from . import psf
 from .corners import make_pixel_corners
 
 __all__ = [
+    "ReprojectResult",
     "StampResult",
     "build_stamp",
     "convolve_gaussian_axis",

@@ -40,7 +40,8 @@ def test_identity_reprojection_preserves_image_footprint_and_weight(dtype):
         dtype=dtype,
     )
     corners = _identity_corners(3, 3)
-    image, footprint, weight = noobase.image.reproject_exact(image_in, corners)
+    result = noobase.image.reproject_exact(image_in, corners)
+    image, footprint, weight = result.image, result.footprint, result.weight
     assert image.dtype == np.float64
     assert footprint.dtype == np.float64
     assert weight.dtype == np.float64
@@ -57,7 +58,8 @@ def test_half_pixel_shift_linear_average_of_two_columns(dtype):
     image_in = np.array([[1.0, 2.0, 3.0, 4.0]], dtype=dtype)
     corners = _identity_corners(1, 4)
     corners[..., 0] += 0.5
-    image, footprint, weight = noobase.image.reproject_exact(image_in, corners)
+    result = noobase.image.reproject_exact(image_in, corners)
+    image, footprint, weight = result.image, result.footprint, result.weight
     # Output pixel j ends up averaging input pixels j and j+1 equally, except
     # the trailing column which only sees input pixel 3 (the rest falls off
     # the right edge of the input).
@@ -75,7 +77,8 @@ def test_nan_input_separates_footprint_from_weight():
     image_in = np.array([[1.0, np.nan, 3.0]], dtype=np.float64)
     corners = _identity_corners(1, 3)
     corners[..., 0] += 0.5
-    image, footprint, weight = noobase.image.reproject_exact(image_in, corners)
+    result = noobase.image.reproject_exact(image_in, corners)
+    image, footprint, weight = result.image, result.footprint, result.weight
     # Output pixel 0: input 0 (1.0) + input 1 (NaN), 50/50.
     # image = 1.0; footprint = 1.0 (fully covered geometrically);
     # weight = 0.5 (only non-NaN half contributes).
@@ -96,7 +99,8 @@ def test_nan_in_corners_zeroes_both_footprint_and_weight():
     image_in = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
     corners = _identity_corners(2, 2)
     corners[1, 1, 0] = np.nan
-    image, footprint, weight = noobase.image.reproject_exact(image_in, corners)
+    result = noobase.image.reproject_exact(image_in, corners)
+    image, footprint, weight = result.image, result.footprint, result.weight
     # The NaN corner is shared by all 4 output pixels.
     assert np.all(np.isnan(image))
     np.testing.assert_array_equal(footprint, 0.0)
@@ -111,7 +115,8 @@ def test_output_pixels_outside_input_footprint_are_nan_zero():
         for j_node in range(3):
             corners[i_node, j_node, 0] = 100.0 + j_node
             corners[i_node, j_node, 1] = 100.0 + i_node
-    image, footprint, weight = noobase.image.reproject_exact(image_in, corners)
+    result = noobase.image.reproject_exact(image_in, corners)
+    image, footprint, weight = result.image, result.footprint, result.weight
     assert np.all(np.isnan(image))
     np.testing.assert_array_equal(footprint, 0.0)
     np.testing.assert_array_equal(weight, 0.0)
@@ -133,8 +138,10 @@ def test_f32_and_f64_inputs_produce_identical_geometry_outputs():
     corners[..., 0] += 0.3
     corners[..., 1] -= 0.2
 
-    image_a, footprint_a, weight_a = noobase.image.reproject_exact(image_f64, corners)
-    image_b, footprint_b, weight_b = noobase.image.reproject_exact(image_f32, corners)
+    result_a = noobase.image.reproject_exact(image_f64, corners)
+    result_b = noobase.image.reproject_exact(image_f32, corners)
+    image_a, footprint_a, weight_a = result_a.image, result_a.footprint, result_a.weight
+    image_b, footprint_b, weight_b = result_b.image, result_b.footprint, result_b.weight
     assert image_a.dtype == np.float64
     assert image_b.dtype == np.float64
     # Geometry-only outputs must match bit-exactly because they do not
@@ -171,6 +178,82 @@ def test_pixel_corners_too_small_front_dims_raises():
     corners = np.zeros((1, 5, 2), dtype=np.float64)
     with pytest.raises(ValueError, match=">= 2"):
         noobase.image.reproject_exact(image_in, corners)
+
+
+# ---------------------------------------------------------------------------
+# Optional error propagation
+# ---------------------------------------------------------------------------
+
+
+def test_error_is_none_when_not_supplied():
+    image_in = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+    corners = _identity_corners(2, 2)
+    result = noobase.image.reproject_exact(image_in, corners)
+    assert result.error is None
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_identity_error_passes_through(dtype):
+    image_in = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=dtype)
+    error_in = np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=dtype)
+    corners = _identity_corners(2, 3)
+    result = noobase.image.reproject_exact(image_in, corners, error=error_in)
+    assert result.error is not None
+    assert result.error.dtype == np.float64
+    assert result.error.shape == (2, 3)
+    np.testing.assert_allclose(result.error, error_in.astype(np.float64), atol=TOLERANCE)
+
+
+def test_half_pixel_shift_combines_error_in_quadrature():
+    # Each interior output pixel mixes two input pixels 50/50, so with a
+    # constant input sigma the output is sigma / sqrt(2). The trailing
+    # column sees a single half-area pixel, giving sigma back.
+    image_in = np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float64)
+    sigma = 0.3
+    error_in = np.full((1, 4), sigma, dtype=np.float64)
+    corners = _identity_corners(1, 4)
+    corners[..., 0] += 0.5
+    result = noobase.image.reproject_exact(image_in, corners, error=error_in)
+    expected = sigma / np.sqrt(2.0)
+    np.testing.assert_allclose(result.error[0, 0], expected, atol=TOLERANCE)
+    np.testing.assert_allclose(result.error[0, 1], expected, atol=TOLERANCE)
+    np.testing.assert_allclose(result.error[0, 2], expected, atol=TOLERANCE)
+    np.testing.assert_allclose(result.error[0, 3], sigma, atol=TOLERANCE)
+
+
+def test_supplying_error_does_not_change_image():
+    # The "optional" guarantee: the image must be bitwise identical with
+    # and without the error image, even when an error value is unusable.
+    image_in = np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float64)
+    error_in = np.full((1, 4), 0.3, dtype=np.float64)
+    error_in[0, 1] = np.nan
+    corners = _identity_corners(1, 4)
+    corners[..., 0] += 0.5
+    without_error = noobase.image.reproject_exact(image_in, corners)
+    with_error = noobase.image.reproject_exact(image_in, corners, error=error_in)
+    np.testing.assert_array_equal(with_error.image, without_error.image)
+    # The two output pixels touching the NaN sigma are poisoned to NaN;
+    # the rest stay finite.
+    assert np.isnan(with_error.error[0, 0])
+    assert np.isnan(with_error.error[0, 1])
+    assert np.isfinite(with_error.error[0, 2])
+    assert np.isfinite(with_error.error[0, 3])
+
+
+def test_error_wrong_dtype_raises():
+    image_in = np.zeros((4, 4), dtype=np.float64)
+    error_in = np.zeros((4, 4), dtype=np.float32)
+    corners = _identity_corners(4, 4)
+    with pytest.raises(ValueError, match="float64"):
+        noobase.image.reproject_exact(image_in, corners, error=error_in)
+
+
+def test_error_shape_mismatch_raises():
+    image_in = np.zeros((3, 4), dtype=np.float64)
+    error_in = np.zeros((3, 5), dtype=np.float64)
+    corners = _identity_corners(3, 4)
+    with pytest.raises(ValueError, match="same shape"):
+        noobase.image.reproject_exact(image_in, corners, error=error_in)
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +349,8 @@ def test_make_pixel_corners_end_to_end_with_reproject_exact():
         target_pixel_to_world=_identity_pixel_to_world,
         source_world_to_pixel=_identity_world_to_pixel,
     )
-    image, footprint, weight = noobase.image.reproject_exact(image_in, corners)
+    result = noobase.image.reproject_exact(image_in, corners)
+    image, footprint, weight = result.image, result.footprint, result.weight
     np.testing.assert_allclose(image, image_in, atol=TOLERANCE)
     np.testing.assert_allclose(footprint, 1.0, atol=TOLERANCE)
     np.testing.assert_allclose(weight, 1.0, atol=TOLERANCE)
@@ -462,7 +546,8 @@ def test_coarse_step_end_to_end_with_reproject_exact():
         source_world_to_pixel=_identity_world_to_pixel,
         coarse_step=(2, 4),
     )
-    image, footprint, weight = noobase.image.reproject_exact(image_in, corners)
+    result = noobase.image.reproject_exact(image_in, corners)
+    image, footprint, weight = result.image, result.footprint, result.weight
     np.testing.assert_allclose(image, image_in, atol=TOLERANCE)
     np.testing.assert_allclose(footprint, 1.0, atol=TOLERANCE)
     np.testing.assert_allclose(weight, 1.0, atol=TOLERANCE)

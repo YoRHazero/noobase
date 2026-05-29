@@ -3,16 +3,70 @@ mod stamp;
 
 use ::noobase::convolve::{Boundary, Normalization};
 use ::noobase::image as core_image;
+use ::noobase::image::ReprojectExactOutput;
 use ndarray::{Array2, ArrayView3, Axis};
-use numpy::{IntoPyArray, PyReadonlyArray3};
+use numpy::{IntoPyArray, PyReadonlyArray3, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
 
 use crate::convert::{
-    Scalar, dispatch_array, parse_boundary, parse_normalization, required_typed_array2,
-    to_value_error,
+    Scalar, dispatch_array, optional_companion_array2, parse_boundary, parse_normalization,
+    required_typed_array2, to_value_error,
 };
+
+/// Result of ``reproject_exact``: the reprojected image plus its coverage
+/// maps and, optionally, a propagated 1-sigma error. Constructed by
+/// ``reproject_exact``; not instantiable directly.
+#[pyclass(name = "ReprojectResult", module = "noobase._core.image", frozen)]
+pub struct PyReprojectResult {
+    inner: ReprojectExactOutput,
+}
+
+#[pymethods]
+impl PyReprojectResult {
+    /// Surface-brightness-conserving reprojection of ``image_in``, shape
+    /// ``(H_out, W_out)``, dtype ``float64``. Output pixels with no valid
+    /// input contribution are ``NaN``.
+    #[getter]
+    fn image<'py>(&self, py: Python<'py>) -> Bound<'py, PyAny> {
+        self.inner.image.to_pyarray(py).into_any()
+    }
+
+    /// Pure geometric overlap fraction in ``[0, 1]``, shape ``(H_out,
+    /// W_out)``, dtype ``float64``. Independent of data validity (NaN
+    /// input pixels still count toward this).
+    #[getter]
+    fn footprint<'py>(&self, py: Python<'py>) -> Bound<'py, PyAny> {
+        self.inner.footprint.to_pyarray(py).into_any()
+    }
+
+    /// Valid overlap fraction in ``[0, 1]``, shape ``(H_out, W_out)``,
+    /// dtype ``float64``. Same numerator as ``footprint`` but restricted
+    /// to non-NaN input; always ``<= footprint``.
+    #[getter]
+    fn weight<'py>(&self, py: Python<'py>) -> Bound<'py, PyAny> {
+        self.inner.weight.to_pyarray(py).into_any()
+    }
+
+    /// Propagated 1-sigma error of ``image``, shape ``(H_out, W_out)``,
+    /// dtype ``float64`` -- or ``None`` when no ``error`` input was
+    /// supplied. ``NaN`` where the output pixel has no valid contribution
+    /// or where a contributing pixel had a valid value but an unusable
+    /// (non-finite or negative) error.
+    #[getter]
+    fn error<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyAny>> {
+        self.inner
+            .error
+            .as_ref()
+            .map(|array| array.to_pyarray(py).into_any())
+    }
+
+    fn __repr__(&self) -> String {
+        let (rows, cols) = (self.inner.image.shape()[0], self.inner.image.shape()[1]);
+        let has_error = self.inner.error.is_some();
+        format!("ReprojectResult(shape=({rows}, {cols}), has_error={has_error})")
+    }
+}
 
 /// Surface-brightness-conserving exact reprojection of a 2-D image.
 ///
@@ -46,12 +100,19 @@ use crate::convert::{
 ///     Adjacent output pixels share corners by construction, which makes
 ///     the partition watertight. NaN corners propagate to ``(NaN, 0, 0)``
 ///     in the output for any output pixel that touches them.
+/// error : ndarray, optional
+///     1-sigma error image, same shape and dtype as ``image_in``.
+///     Default ``None``. When given, the result's ``error`` attribute is
+///     a propagated 1-sigma map; when ``None`` it is ``None``. Supplying
+///     it does not change ``image``, ``footprint``, or ``weight``.
 ///
 /// Returns
 /// -------
-/// tuple of (ndarray, ndarray, ndarray)
-///     ``(image, footprint, weight)``, all of shape ``(H_out, W_out)``
-///     and dtype ``float64``.
+/// ReprojectResult
+///     A frozen result object whose ``image``, ``footprint``, and
+///     ``weight`` attributes are each ``(H_out, W_out)`` arrays of dtype
+///     ``float64``, plus an ``error`` attribute (``None`` when no
+///     ``error`` input was given).
 ///
 ///     - ``image`` is the surface-brightness-conserving reprojection:
 ///       ``sum(A_ij * image_in[i, j]) / sum(A_ij_valid)`` over the input
@@ -70,13 +131,24 @@ use crate::convert::{
 ///       they are equal when no input pixel inside the overlap was NaN.
 ///       The ratio ``weight / footprint`` (where ``footprint > 0``) is
 ///       the fraction of the covered region that was free of NaN.
+///     - ``error`` is the propagated 1-sigma error, or ``None`` when no
+///       ``error`` input was supplied. Independent first-order
+///       propagation: ``sqrt(sum(A_ij^2 * sigma_ij^2)) / sum(A_ij)`` over
+///       the valid input pixels. An output pixel is ``NaN`` where it has
+///       no valid contribution, or where a contributing pixel had a valid
+///       value but a non-finite or negative error (the value still enters
+///       ``image``, so its unknown variance cannot be dropped). Only the
+///       marginal per-pixel 1-sigma is given; correlations between output
+///       pixels sharing input pixels are not represented.
 ///
 /// Raises
 /// ------
 /// ValueError
 ///     If ``image_in`` is not a 2-D float32 / float64 array, if
 ///     ``pixel_corners`` is not a float64 array with last dimension 2 and
-///     both grid dimensions at least 2.
+///     both grid dimensions at least 2, or if ``error`` is given with a
+///     dtype other than ``image_in``'s or a shape other than
+///     ``image_in``'s.
 ///
 /// Notes
 /// -----
@@ -87,13 +159,13 @@ use crate::convert::{
 /// spherical treatment should pre-correct ``pixel_corners`` accordingly.
 #[pyfunction]
 #[pyo3(name = "reproject_exact")]
-#[pyo3(signature = (image_in, pixel_corners))]
-#[pyo3(text_signature = "(image_in, pixel_corners)")]
-fn reproject_exact_function<'py>(
-    py: Python<'py>,
-    image_in: &Bound<'py, PyAny>,
-    pixel_corners: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyAny>> {
+#[pyo3(signature = (image_in, pixel_corners, *, error=None))]
+#[pyo3(text_signature = "(image_in, pixel_corners, *, error=None)")]
+fn reproject_exact_function(
+    image_in: &Bound<'_, PyAny>,
+    pixel_corners: &Bound<'_, PyAny>,
+    error: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyReprojectResult> {
     let corners_readonly = pixel_corners
         .extract::<PyReadonlyArray3<'_, f64>>()
         .map_err(|_| {
@@ -108,27 +180,23 @@ fn reproject_exact_function<'py>(
         2,
         "image_in",
         reproject_exact_impl,
-        py,
-        corners_owned.view()
+        corners_owned.view(),
+        error
     )
 }
 
-fn reproject_exact_impl<'py, T: Scalar>(
+fn reproject_exact_impl<T: Scalar>(
     image: Array2<T>,
-    py: Python<'py>,
     corners: ArrayView3<'_, f64>,
-) -> PyResult<Bound<'py, PyAny>> {
-    let output =
-        core_image::reproject_exact::<T>(image.view(), corners, None).map_err(to_value_error)?;
-    let tuple = PyTuple::new(
-        py,
-        [
-            output.image.into_pyarray(py).into_any(),
-            output.footprint.into_pyarray(py).into_any(),
-            output.weight.into_pyarray(py).into_any(),
-        ],
-    )?;
-    Ok(tuple.into_any())
+    error: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyReprojectResult> {
+    // `error` shares the image's dtype channel `T`; a mismatched dtype is
+    // rejected here as the canonical companion-array `ValueError`.
+    let error_owned = optional_companion_array2::<T>(error, "error")?;
+    let error_view = error_owned.as_ref().map(|array| array.view());
+    let output = core_image::reproject_exact::<T>(image.view(), corners, error_view)
+        .map_err(to_value_error)?;
+    Ok(PyReprojectResult { inner: output })
 }
 
 /// Convolve a 2-D image with a fixed, centered PSF (true convolution).
@@ -302,6 +370,7 @@ pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule
     let image = PyModule::new(py, "noobase._core.image")?;
     image.setattr("__package__", "noobase._core")?;
     image.add_function(wrap_pyfunction!(reproject_exact_function, &image)?)?;
+    image.add_class::<PyReprojectResult>()?;
     image.add_function(wrap_pyfunction!(convolve_psf_function, &image)?)?;
     image.add_function(wrap_pyfunction!(convolve_gaussian_axis_function, &image)?)?;
     stamp::register_into(&image)?;

@@ -6,10 +6,23 @@ from numpy.typing import NDArray
 from . import psf as psf
 
 
+class ReprojectResult:
+    @property
+    def image(self) -> NDArray[np.float64]: ...
+    @property
+    def footprint(self) -> NDArray[np.float64]: ...
+    @property
+    def weight(self) -> NDArray[np.float64]: ...
+    @property
+    def error(self) -> Optional[NDArray[np.float64]]: ...
+
+
 def reproject_exact(
     image_in: NDArray[Any],
     pixel_corners: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]: ...
+    *,
+    error: Optional[NDArray[Any]] = None,
+) -> ReprojectResult: ...
 
 
 def convolve_psf(
