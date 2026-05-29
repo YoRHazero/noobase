@@ -32,7 +32,7 @@ def make_pixel_corners(
     The terminology follows image registration: ``source`` is the image
     being reprojected (the data you have), ``target`` is the frame you
     are aligning onto (the goal). In a later call to
-    ``reproject_exact``, ``source`` will be passed as ``image_in`` and
+    ``reproject_exact``, ``source`` will be passed as ``image`` and
     the corner array produced here projects each target pixel into the
     source's pixel coordinates.
 

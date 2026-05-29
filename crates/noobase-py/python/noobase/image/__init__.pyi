@@ -18,7 +18,7 @@ class ReprojectResult:
 
 
 def reproject_exact(
-    image_in: NDArray[Any],
+    image: NDArray[Any],
     pixel_corners: NDArray[np.float64],
     *,
     error: Optional[NDArray[Any]] = None,

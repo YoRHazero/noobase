@@ -24,7 +24,7 @@ pub struct PyReprojectResult {
 
 #[pymethods]
 impl PyReprojectResult {
-    /// Surface-brightness-conserving reprojection of ``image_in``, shape
+    /// Surface-brightness-conserving reprojection of ``image``, shape
     /// ``(H_out, W_out)``, dtype ``float64``. Output pixels with no valid
     /// input contribution are ``NaN``.
     #[getter]
@@ -86,7 +86,7 @@ impl PyReprojectResult {
 ///
 /// Parameters
 /// ----------
-/// image_in : ndarray
+/// image : ndarray
 ///     Input image of shape ``(H_in, W_in)``, dtype ``float32`` or
 ///     ``float64``. NaN values are treated as masked input pixels: they
 ///     are excluded from the numerator and from the valid weight, but
@@ -101,7 +101,7 @@ impl PyReprojectResult {
 ///     the partition watertight. NaN corners propagate to ``(NaN, 0, 0)``
 ///     in the output for any output pixel that touches them.
 /// error : ndarray, optional
-///     1-sigma error image, same shape and dtype as ``image_in``.
+///     1-sigma error image, same shape and dtype as ``image``.
 ///     Default ``None``. When given, the result's ``error`` attribute is
 ///     a propagated 1-sigma map; when ``None`` it is ``None``. Supplying
 ///     it does not change ``image``, ``footprint``, or ``weight``.
@@ -115,7 +115,7 @@ impl PyReprojectResult {
 ///     ``error`` input was given).
 ///
 ///     - ``image`` is the surface-brightness-conserving reprojection:
-///       ``sum(A_ij * image_in[i, j]) / sum(A_ij_valid)`` over the input
+///       ``sum(A_ij * image[i, j]) / sum(A_ij_valid)`` over the input
 ///       pixels overlapping each output pixel, where ``A_ij`` is the
 ///       polygon-intersection area in input-pixel units and the
 ///       ``_valid`` sum excludes NaN input pixels. Output pixels with no
@@ -144,11 +144,11 @@ impl PyReprojectResult {
 /// Raises
 /// ------
 /// ValueError
-///     If ``image_in`` is not a 2-D float32 / float64 array, if
+///     If ``image`` is not a 2-D float32 / float64 array, if
 ///     ``pixel_corners`` is not a float64 array with last dimension 2 and
 ///     both grid dimensions at least 2, or if ``error`` is given with a
-///     dtype other than ``image_in``'s or a shape other than
-///     ``image_in``'s.
+///     dtype other than ``image``'s or a shape other than
+///     ``image``'s.
 ///
 /// Notes
 /// -----
@@ -159,10 +159,10 @@ impl PyReprojectResult {
 /// spherical treatment should pre-correct ``pixel_corners`` accordingly.
 #[pyfunction]
 #[pyo3(name = "reproject_exact")]
-#[pyo3(signature = (image_in, pixel_corners, *, error=None))]
-#[pyo3(text_signature = "(image_in, pixel_corners, *, error=None)")]
+#[pyo3(signature = (image, pixel_corners, *, error=None))]
+#[pyo3(text_signature = "(image, pixel_corners, *, error=None)")]
 fn reproject_exact_function(
-    image_in: &Bound<'_, PyAny>,
+    image: &Bound<'_, PyAny>,
     pixel_corners: &Bound<'_, PyAny>,
     error: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyReprojectResult> {
@@ -176,9 +176,9 @@ fn reproject_exact_function(
     let corners_owned = corners_readonly.as_array().to_owned();
 
     dispatch_array!(
-        image_in,
+        image,
         2,
-        "image_in",
+        "image",
         reproject_exact_impl,
         corners_owned.view(),
         error

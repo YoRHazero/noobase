@@ -54,7 +54,7 @@
 //!   the covered region that was free of NaN.
 //!
 //! - **Optional error propagation.** When a 1-sigma error image is
-//!   supplied alongside `image_in`, the output carries a propagated
+//!   supplied alongside `image`, the output carries a propagated
 //!   1-sigma error array. The propagation is first-order under the
 //!   assumption that input pixel errors are independent: for an output
 //!   pixel that averages input pixels with overlap areas `A_k` and
@@ -82,7 +82,7 @@ use crate::image::polygon::{Point, clip_quad_against_unit_cell, signed_area};
 /// Output of [`reproject_exact`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReprojectExactOutput {
-    /// Surface-brightness-conserving reprojection of `image_in`.
+    /// Surface-brightness-conserving reprojection of `image`.
     /// Shape: `(H_out, W_out)`. Pixels that received no valid input
     /// contribution are `NaN`.
     pub image: Array2<f64>,
@@ -98,7 +98,7 @@ pub struct ReprojectExactOutput {
     /// Always `<= footprint`. Shape: `(H_out, W_out)`.
     pub weight: Array2<f64>,
     /// Propagated 1-sigma error of `image`, in the same units as
-    /// `image`. `Some` with shape `(H_out, W_out)` when `error_in` was
+    /// `image`. `Some` with shape `(H_out, W_out)` when `error` was
     /// supplied to [`reproject_exact`]; `None` otherwise.
     ///
     /// First-order propagation under independent input-pixel errors:
@@ -131,7 +131,7 @@ pub enum ReprojectError {
         last: usize,
     },
     #[error(
-        "error_in must have the same shape as image_in ({image_rows}, {image_cols}); got ({error_rows}, {error_cols})"
+        "error must have the same shape as image ({image_rows}, {image_cols}); got ({error_rows}, {error_cols})"
     )]
     ErrorShapeMismatch {
         image_rows: usize,
@@ -148,7 +148,7 @@ pub enum ReprojectError {
 ///
 /// # Parameters
 ///
-/// - `image_in`: input image of shape `(H_in, W_in)`. NaN values are
+/// - `image`: input image of shape `(H_in, W_in)`. NaN values are
 ///   treated as mask (excluded from both numerator and denominator).
 ///   May be `f32` or `f64`; internally upcast to `f64` for the kernel.
 /// - `pixel_corners`: shape `(H_out + 1, W_out + 1, 2)`. The last
@@ -157,8 +157,8 @@ pub enum ReprojectError {
 ///   pixel coordinates (integer = pixel center). NaN corners propagate
 ///   to `(NaN, 0)` in the output for any output pixel that touches
 ///   them.
-/// - `error_in`: optional 1-sigma error image, same shape and dtype as
-///   `image_in`. When `Some`, the output carries a propagated `error`
+/// - `error`: optional 1-sigma error image, same shape and dtype as
+///   `image`. When `Some`, the output carries a propagated `error`
 ///   array; when `None`, `error` is `None` and there is no extra work.
 ///   Supplying it does not change `image`, `footprint`, or `weight`.
 ///
@@ -166,7 +166,7 @@ pub enum ReprojectError {
 ///
 /// [`ReprojectExactOutput`] containing `image`, `footprint`, and
 /// `weight` (each of shape `(H_out, W_out)`, dtype `f64`), plus `error`
-/// which is `Some` of the same shape exactly when `error_in` was
+/// which is `Some` of the same shape exactly when `error` was
 /// supplied.
 ///
 /// # Errors
@@ -175,11 +175,11 @@ pub enum ReprojectError {
 /// does not have last dim `2`, or if either of its front dimensions is
 /// below `2` (which would produce zero output pixels in that
 /// direction). Returns [`ReprojectError::ErrorShapeMismatch`] if
-/// `error_in` is supplied with a shape different from `image_in`.
+/// `error` is supplied with a shape different from `image`.
 pub fn reproject_exact<T: Float>(
-    image_in: ArrayView2<T>,
+    image: ArrayView2<T>,
     pixel_corners: ArrayView3<f64>,
-    error_in: Option<ArrayView2<T>>,
+    error: Option<ArrayView2<T>>,
 ) -> Result<ReprojectExactOutput, ReprojectError> {
     let corner_shape = pixel_corners.shape();
     let rows = corner_shape[0];
@@ -191,8 +191,8 @@ pub fn reproject_exact<T: Float>(
 
     // The error image, when present, must align pixel-for-pixel with the
     // input image so the kernel can read both at the same index.
-    if let Some(error_view) = error_in.as_ref() {
-        let image_shape = image_in.shape();
+    if let Some(error_view) = error.as_ref() {
+        let image_shape = image.shape();
         let error_shape = error_view.shape();
         if image_shape != error_shape {
             return Err(ReprojectError::ErrorShapeMismatch {
@@ -209,9 +209,9 @@ pub fn reproject_exact<T: Float>(
     // either force a generic kernel (more code, no benefit) or repeat
     // the cast inside the hot loop. The error image (if any) is upcast
     // the same way.
-    let image_in_f64: Array2<f64> = image_in.mapv(|value| value.to_f64().unwrap_or(f64::NAN));
-    let error_in_f64: Option<Array2<f64>> =
-        error_in.map(|view| view.mapv(|value| value.to_f64().unwrap_or(f64::NAN)));
+    let image_f64: Array2<f64> = image.mapv(|value| value.to_f64().unwrap_or(f64::NAN));
+    let error_f64: Option<Array2<f64>> =
+        error.map(|view| view.mapv(|value| value.to_f64().unwrap_or(f64::NAN)));
 
     let height_out = rows - 1;
     let width_out = cols - 1;
@@ -219,14 +219,14 @@ pub fn reproject_exact<T: Float>(
     let mut footprint = Array2::<f64>::zeros((height_out, width_out));
     let mut weight = Array2::<f64>::zeros((height_out, width_out));
 
-    // Rows are independent: each output row only reads `image_in_f64`
-    // (and `error_in_f64`) plus the slice of `pixel_corners` between
+    // Rows are independent: each output row only reads `image_f64`
+    // (and `error_f64`) plus the slice of `pixel_corners` between
     // rows `i_out` and `i_out + 1`, and only writes its own row of the
     // outputs. Drive them in parallel via rayon. The error path is
     // branched out so the no-error call allocates nothing extra and
     // does zero per-pixel error work.
-    let error_out = match error_in_f64.as_ref() {
-        Some(error_in_view) => {
+    let error_out = match error_f64.as_ref() {
+        Some(error_f64_view) => {
             let mut error_out = Array2::<f64>::from_elem((height_out, width_out), f64::NAN);
             image_out
                 .axis_iter_mut(Axis(0))
@@ -243,8 +243,8 @@ pub fn reproject_exact<T: Float>(
                             row_footprint,
                             row_weight,
                             Some(row_error),
-                            image_in_f64.view(),
-                            Some(error_in_view.view()),
+                            image_f64.view(),
+                            Some(error_f64_view.view()),
                             pixel_corners,
                         );
                     },
@@ -265,7 +265,7 @@ pub fn reproject_exact<T: Float>(
                         row_footprint,
                         row_weight,
                         None,
-                        image_in_f64.view(),
+                        image_f64.view(),
                         None,
                         pixel_corners,
                     );
@@ -287,9 +287,9 @@ pub fn reproject_exact<T: Float>(
 /// change the result bitwise.
 #[cfg(test)]
 fn reproject_exact_sequential<T: Float>(
-    image_in: ArrayView2<T>,
+    image: ArrayView2<T>,
     pixel_corners: ArrayView3<f64>,
-    error_in: Option<ArrayView2<T>>,
+    error: Option<ArrayView2<T>>,
 ) -> Result<ReprojectExactOutput, ReprojectError> {
     let corner_shape = pixel_corners.shape();
     let rows = corner_shape[0];
@@ -298,8 +298,8 @@ fn reproject_exact_sequential<T: Float>(
     if last != 2 || rows < 2 || cols < 2 {
         return Err(ReprojectError::PixelCornersShape { rows, cols, last });
     }
-    if let Some(error_view) = error_in.as_ref() {
-        let image_shape = image_in.shape();
+    if let Some(error_view) = error.as_ref() {
+        let image_shape = image.shape();
         let error_shape = error_view.shape();
         if image_shape != error_shape {
             return Err(ReprojectError::ErrorShapeMismatch {
@@ -310,18 +310,18 @@ fn reproject_exact_sequential<T: Float>(
             });
         }
     }
-    let image_in_f64: Array2<f64> = image_in.mapv(|value| value.to_f64().unwrap_or(f64::NAN));
-    let error_in_f64: Option<Array2<f64>> =
-        error_in.map(|view| view.mapv(|value| value.to_f64().unwrap_or(f64::NAN)));
+    let image_f64: Array2<f64> = image.mapv(|value| value.to_f64().unwrap_or(f64::NAN));
+    let error_f64: Option<Array2<f64>> =
+        error.map(|view| view.mapv(|value| value.to_f64().unwrap_or(f64::NAN)));
     let height_out = rows - 1;
     let width_out = cols - 1;
     let mut image_out = Array2::<f64>::from_elem((height_out, width_out), f64::NAN);
     let mut footprint = Array2::<f64>::zeros((height_out, width_out));
     let mut weight = Array2::<f64>::zeros((height_out, width_out));
-    let mut error_out = error_in_f64
+    let mut error_out = error_f64
         .as_ref()
         .map(|_| Array2::<f64>::from_elem((height_out, width_out), f64::NAN));
-    let error_in_view = error_in_f64.as_ref().map(|array| array.view());
+    let error_f64_view = error_f64.as_ref().map(|array| array.view());
     for row_index in 0..height_out {
         let row_error = error_out
             .as_mut()
@@ -332,8 +332,8 @@ fn reproject_exact_sequential<T: Float>(
             footprint.index_axis_mut(Axis(0), row_index),
             weight.index_axis_mut(Axis(0), row_index),
             row_error,
-            image_in_f64.view(),
-            error_in_view,
+            image_f64.view(),
+            error_f64_view,
             pixel_corners,
         );
     }
@@ -348,7 +348,7 @@ fn reproject_exact_sequential<T: Float>(
 /// Compute one output row in place. Factored out of the driver so a
 /// parallel driver can reuse the exact same per-row work unit.
 ///
-/// `row_error` and `error_in_f64` are `Some` together (error requested)
+/// `row_error` and `error_f64` are `Some` together (error requested)
 /// or `None` together (no error). When present, the per-output-pixel
 /// marginal 1-sigma is written into `row_error` using first-order
 /// independent propagation; see [`ReprojectExactOutput::error`].
@@ -359,12 +359,12 @@ pub(crate) fn process_output_row(
     mut row_footprint: ArrayViewMut1<f64>,
     mut row_weight: ArrayViewMut1<f64>,
     mut row_error: Option<ArrayViewMut1<f64>>,
-    image_in_f64: ArrayView2<f64>,
-    error_in_f64: Option<ArrayView2<f64>>,
+    image_f64: ArrayView2<f64>,
+    error_f64: Option<ArrayView2<f64>>,
     pixel_corners: ArrayView3<f64>,
 ) {
-    let height_in = image_in_f64.shape()[0];
-    let width_in = image_in_f64.shape()[1];
+    let height_in = image_f64.shape()[0];
+    let width_in = image_f64.shape()[1];
     let width_out = row_image.len();
 
     for column_index in 0..width_out {
@@ -446,7 +446,7 @@ pub(crate) fn process_output_row(
         let mut numerator = 0.0_f64;
         let mut denominator_valid = 0.0_f64;
         let mut denominator_geom = 0.0_f64;
-        // Error propagation accumulators, used only when error_in_f64 is
+        // Error propagation accumulators, used only when error_f64 is
         // Some. `variance_numerator` collects sum(A_k^2 * sigma_k^2);
         // `error_poisoned` records a valid pixel with an unusable error.
         let mut variance_numerator = 0.0_f64;
@@ -466,7 +466,7 @@ pub(crate) fn process_output_row(
                     continue;
                 }
                 denominator_geom += overlap_area;
-                let pixel_value = image_in_f64[(cell_row as usize, cell_column as usize)];
+                let pixel_value = image_f64[(cell_row as usize, cell_column as usize)];
                 if pixel_value.is_nan() {
                     // NaN-as-mask: drop this input pixel from the
                     // numerator and the valid denominator (weight),
@@ -475,8 +475,8 @@ pub(crate) fn process_output_row(
                 }
                 numerator += overlap_area * pixel_value;
                 denominator_valid += overlap_area;
-                if let Some(error_in) = error_in_f64.as_ref() {
-                    let sigma = error_in[(cell_row as usize, cell_column as usize)];
+                if let Some(error) = error_f64.as_ref() {
+                    let sigma = error[(cell_row as usize, cell_column as usize)];
                     if sigma.is_finite() && sigma >= 0.0 {
                         variance_numerator += overlap_area * overlap_area * sigma * sigma;
                     } else {
