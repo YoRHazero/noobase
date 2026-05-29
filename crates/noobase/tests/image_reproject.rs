@@ -42,8 +42,8 @@ fn f32_and_f64_inputs_agree_within_f32_precision() {
     // multiple input pixels.
     let corners = shifted_identity_corners(height, width, 0.3, -0.2);
 
-    let output_f64 = reproject_exact(image_f64.view(), corners.view()).unwrap();
-    let output_f32 = reproject_exact(image_f32.view(), corners.view()).unwrap();
+    let output_f64 = reproject_exact(image_f64.view(), corners.view(), None).unwrap();
+    let output_f32 = reproject_exact(image_f32.view(), corners.view(), None).unwrap();
 
     assert_eq!(output_f64.image.shape(), &[height, width]);
     assert_eq!(output_f32.image.shape(), &[height, width]);
@@ -87,7 +87,7 @@ fn output_dtype_is_always_f64_for_f32_input() {
     // mostly to document the invariant and pin the API.
     let image: Array2<f32> = Array2::from_elem((2, 2), 1.5_f32);
     let corners = shifted_identity_corners(2, 2, 0.0, 0.0);
-    let output = reproject_exact(image.view(), corners.view()).unwrap();
+    let output = reproject_exact(image.view(), corners.view(), None).unwrap();
     let _check_image_dtype: &Array2<f64> = &output.image;
     let _check_footprint_dtype: &Array2<f64> = &output.footprint;
     let _check_weight_dtype: &Array2<f64> = &output.weight;
