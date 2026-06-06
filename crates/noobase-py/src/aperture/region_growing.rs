@@ -4,9 +4,10 @@
 //! the optional `LabelInput` pair; this binding flattens both into a
 //! single `grow_mask` function with keyword arguments and a fully
 //! explicit signature. The thin Python wrapper at
-//! `noobase.aperture.region_growing` layers two policy defaults on top
+//! `noobase.aperture.region_growing` layers the policy defaults on top
 //! (auto-enable SNR when `err` is provided, accept a numpy `(N, 2)`
-//! array as `seed_pixels`).
+//! array as `seed_pixels`, default `detection` to `data`, and scale the
+//! dimensionless `shape_weight` by the image noise level).
 
 use ::noobase::aperture::region_growing::{
     GradientStop, GrowthConfig, GrowthResult, LabelInput, SnrStop, StopCriterion, StopReason,
@@ -89,10 +90,14 @@ impl PyGrowthResult {
     data,
     seed_pixels,
     *,
+    detection = None,
     err = None,
     label_map = None,
     label_allowed = None,
     connectivity = "eight",
+    shape_weight = 0.0,
+    min_neighbor_support = 1,
+    min_pixels_before_shape_gate = 0,
     snr_threshold = None,
     snr_hysteresis = 3,
     gradient_ratio_threshold = None,
@@ -105,10 +110,14 @@ impl PyGrowthResult {
 fn grow_mask_function(
     data: PyReadonlyArray2<'_, f64>,
     seed_pixels: Vec<(usize, usize)>,
+    detection: Option<PyReadonlyArray2<'_, f64>>,
     err: Option<PyReadonlyArray2<'_, f64>>,
     label_map: Option<PyReadonlyArray2<'_, i32>>,
     label_allowed: Option<Vec<i32>>,
     connectivity: &str,
+    shape_weight: f64,
+    min_neighbor_support: usize,
+    min_pixels_before_shape_gate: usize,
     snr_threshold: Option<f64>,
     snr_hysteresis: usize,
     gradient_ratio_threshold: Option<f64>,
@@ -146,15 +155,31 @@ fn grow_mask_function(
                 hysteresis: gradient_hysteresis,
             }),
         },
+        shape_weight,
+        min_neighbor_support,
+        min_pixels_before_shape_gate,
         min_pixels_before_stop_check,
         check_interval,
         annulus_thickness,
     };
 
     let data_view = data.as_array();
+    // The detection image drives the heap priority; when omitted it
+    // defaults to the science image (plain brightest-pixel growth).
+    let detection_view = match detection.as_ref() {
+        Some(detection) => detection.as_array(),
+        None => data_view,
+    };
     let err_view = err.as_ref().map(|e| e.as_array());
-    let result =
-        grow_mask(data_view, err_view, label, &seed_pixels, &config).map_err(to_value_error)?;
+    let result = grow_mask(
+        detection_view,
+        data_view,
+        err_view,
+        label,
+        &seed_pixels,
+        &config,
+    )
+    .map_err(to_value_error)?;
 
     Ok(PyGrowthResult { inner: result })
 }

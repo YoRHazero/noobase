@@ -32,6 +32,15 @@ impl Connectivity {
             ],
         }
     }
+
+    /// Maximum number of neighbours a pixel can have under this
+    /// connectivity (4 or 8). Used to normalise the neighbour-support
+    /// count into the `[0, 1]` fraction that drives the shape term in
+    /// the heap priority, so `shape_weight` carries the same meaning
+    /// regardless of connectivity.
+    pub fn max_neighbors(self) -> usize {
+        self.offsets().len()
+    }
 }
 
 /// Signal-to-noise stop criterion evaluated on the inner annulus.
@@ -77,12 +86,49 @@ pub struct StopCriterion {
 /// All fields are required. No defaults are exposed at the Rust layer:
 /// reasonable defaults are scenario-specific (e.g. JWST/NIRCam high-z
 /// galaxies) and belong to the calling boundary (the Python binding).
+///
+/// # Shape regularisation
+///
+/// Three fields control how compact the mask stays, suppressing the
+/// thin tendrils a pure brightest-pixel heap would chase along noise
+/// ridges or bridges to neighbouring sources:
+///
+/// - `shape_weight` adds a soft reward for admitting pixels that already
+///   have many in-mask neighbours, biasing the *order* of growth toward
+///   filling concavities before extending arms.
+/// - `min_neighbor_support` is a hard floor: once past the warm-up, a
+///   pixel is refused admission until enough of its neighbours are in
+///   the mask. This sets the minimum aperture "neck width" and directly
+///   forbids one-pixel-wide filaments.
+/// - `min_pixels_before_shape_gate` delays that floor so the seed core
+///   can establish itself (a single seed's neighbours start with only
+///   one in-mask neighbour, which the floor would otherwise deadlock).
 #[derive(Debug, Clone)]
 pub struct GrowthConfig {
     /// Pixel adjacency for heap expansion and annulus dilation.
     pub connectivity: Connectivity,
     /// Enabled stop criteria (at least one must be set).
     pub stop: StopCriterion,
+    /// Soft shape-regularisation weight. The heap priority of a
+    /// candidate pixel is `detection_value + shape_weight * fraction`,
+    /// where `fraction` is its in-mask neighbour count divided by
+    /// [`Connectivity::max_neighbors`]. `0.0` disables the soft term
+    /// (pure brightest-first growth). Its natural scale is the detection
+    /// noise level: at that scale the term only breaks ties near the
+    /// noise floor (where tendrils form) and leaves real structure,
+    /// whose detection value dominates, untouched.
+    pub shape_weight: f64,
+    /// Hard lower bound on a candidate pixel's in-mask neighbour count
+    /// for admission, enforced once `min_pixels_before_shape_gate` is
+    /// reached. `0` or `1` disables the floor (every frontier pixel has
+    /// at least one in-mask neighbour by construction). Must not exceed
+    /// [`Connectivity::max_neighbors`], otherwise no pixel could ever be
+    /// admitted past the warm-up.
+    pub min_neighbor_support: usize,
+    /// Number of admitted pixels before the `min_neighbor_support` floor
+    /// activates. Lets the seed core grow past the size where every
+    /// frontier pixel has only a single in-mask neighbour.
+    pub min_pixels_before_shape_gate: usize,
     /// Lower bound on the mask size before stop checks may fire.
     /// Prevents premature termination on the first handful of pixels.
     pub min_pixels_before_stop_check: usize,

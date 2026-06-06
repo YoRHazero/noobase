@@ -88,4 +88,24 @@ pub enum GrowError {
         err_shape: (usize, usize),
         data_shape: (usize, usize),
     },
+    /// The detection array shape does not match the data shape. The
+    /// detection image drives the heap priority; the data image drives
+    /// the stop statistics. They must be pixel-aligned.
+    #[error("detection shape {detection_shape:?} must equal data shape {data_shape:?}")]
+    DetectionShapeMismatch {
+        detection_shape: (usize, usize),
+        data_shape: (usize, usize),
+    },
+    /// `min_neighbor_support` exceeds the maximum neighbour count for the
+    /// configured connectivity. Past the warm-up no pixel could ever
+    /// reach that support, so growth would stall permanently — almost
+    /// certainly a caller bug, so we reject it up front.
+    #[error(
+        "min_neighbor_support {min_neighbor_support} exceeds the {max_neighbors} neighbours \
+         available under the configured connectivity"
+    )]
+    MinNeighborSupportTooLarge {
+        min_neighbor_support: usize,
+        max_neighbors: usize,
+    },
 }

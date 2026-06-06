@@ -69,3 +69,59 @@ def test_label_map_without_allowed_raises_value_error():
             label_allowed=None,
             gradient_ratio_threshold=1.0,
         )
+
+
+def test_detection_kwarg_drives_growth_not_data():
+    # The detection image must reach the core as the heap key: a bright
+    # ridge to the right in detection, an equally bright ridge going
+    # down in data. Growth must follow detection (reach the right edge)
+    # and ignore data's ridge.
+    n = 11
+    detection = np.full((n, n), 1.0, dtype=np.float64)
+    detection[5, 5:] = 100.0
+    data = np.full((n, n), 1.0, dtype=np.float64)
+    data[5:, 5] = 100.0
+    err = np.ones((n, n), dtype=np.float64)
+
+    result = grow_mask(
+        data,
+        [(5, 5)],
+        detection=detection,
+        err=err,
+        snr_threshold=0.5,
+        snr_hysteresis=10**9,  # SNR stop can never fire
+        gradient_ratio_threshold=None,
+        shape_weight=0.0,
+        min_neighbor_support=1,
+        check_interval=1,
+        min_pixels_before_stop_check=1,
+    )
+
+    assert result.mask[5, 10], "growth must follow the detection ridge"
+    assert not result.mask[10, 5], "growth must not follow the data ridge"
+
+
+def test_min_neighbor_support_too_large_raises_value_error():
+    # New core GrowError variant must surface as ValueError.
+    data = np.zeros((3, 3), dtype=np.float64)
+    with pytest.raises(ValueError, match="min_neighbor_support"):
+        grow_mask(
+            data,
+            [(1, 1)],
+            gradient_ratio_threshold=1.0,
+            connectivity="four",
+            min_neighbor_support=5,
+        )
+
+
+def test_default_shape_weight_scaling_runs_without_err():
+    # With err omitted the SNR stop is auto-disabled and the wrapper
+    # scales the default shape_weight by mad_std(data) (no err path).
+    # Exercises that scaling without crashing and returns a usable mask.
+    n = 21
+    data = _centered_gaussian(n, sigma=2.0, amplitude=100.0)
+
+    result = grow_mask(data, [(10, 10)])
+
+    assert isinstance(result, GrowthResult)
+    assert result.mask[10, 10]
