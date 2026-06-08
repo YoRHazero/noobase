@@ -114,6 +114,18 @@ def test_min_neighbor_support_too_large_raises_value_error():
         )
 
 
+def test_fill_support_out_of_range_raises_value_error():
+    # New core GrowError variant for a runaway-prone fill threshold.
+    data = np.zeros((3, 3), dtype=np.float64)
+    with pytest.raises(ValueError, match="fill_min_cardinal_support"):
+        grow_mask(
+            data,
+            [(1, 1)],
+            gradient_ratio_threshold=1.0,
+            fill_min_cardinal_support=2,
+        )
+
+
 def test_gradient_percentile_invalid_raises_value_error():
     # New core GrowError variant for an inverted percentile band.
     data = np.zeros((3, 3), dtype=np.float64)

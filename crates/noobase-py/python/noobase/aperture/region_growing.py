@@ -62,6 +62,7 @@ def grow_mask(
     shape_weight: float = 1.0,
     min_neighbor_support: int = 2,
     min_pixels_before_shape_gate: int = 8,
+    fill_min_cardinal_support: Optional[int] = 3,
     snr_threshold: Optional[float] = _UNSET,  # type: ignore[assignment]
     snr_hysteresis: int = 3,
     gradient_ratio_threshold: Optional[float] = 1.0,
@@ -124,6 +125,15 @@ def grow_mask(
         Admitted-pixel count before the ``min_neighbor_support`` floor
         activates, letting the seed core establish itself first. Default
         ``8``.
+    fill_min_cardinal_support : int or None, optional
+        Unconditional concavity fill (the closing counterpart to
+        ``min_neighbor_support``). A pixel with at least this many of its
+        four cardinal neighbours already in the mask is admitted at once,
+        regardless of flux, closing deep notches and enclosed holes. Must
+        be ``3`` (closes three-walled notches and holes) or ``4`` (holes
+        only); ``None`` disables it. Default ``3``. Source separation is
+        left to the label gate, never this fill; a closed-over bad pixel
+        joins the footprint for photometry to exclude.
     snr_threshold : float, optional
         Threshold for the cumulative inner-annulus signal-to-noise stop.
         If unspecified, defaults to ``2.0`` when ``err`` is provided and
@@ -198,6 +208,7 @@ def grow_mask(
         shape_weight=shape_weight_absolute,
         min_neighbor_support=min_neighbor_support,
         min_pixels_before_shape_gate=min_pixels_before_shape_gate,
+        fill_min_cardinal_support=fill_min_cardinal_support,
         snr_threshold=snr_threshold,
         snr_hysteresis=snr_hysteresis,
         gradient_ratio_threshold=gradient_ratio_threshold,

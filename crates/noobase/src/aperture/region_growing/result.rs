@@ -116,4 +116,10 @@ pub enum GrowError {
          require 0 <= lo < hi <= 100"
     )]
     GradientPercentileInvalid { lo: f64, hi: f64 },
+    /// `fill_min_cardinal_support` is outside the valid `3..=4` range.
+    /// Below 3 would close straight edges (`Δperimeter >= 0`) and grow
+    /// without bound; above 4 is unreachable (a pixel has only four
+    /// cardinal neighbours). Pass `None` to disable the fill instead.
+    #[error("fill_min_cardinal_support {value} must be 3 or 4 (or None to disable)")]
+    FillSupportInvalid { value: usize },
 }

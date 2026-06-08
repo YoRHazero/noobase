@@ -116,6 +116,11 @@ pub struct StopCriterion {
 /// - `min_pixels_before_shape_gate` delays that floor so the seed core
 ///   can establish itself (a single seed's neighbours start with only
 ///   one in-mask neighbour, which the floor would otherwise deadlock).
+///
+/// A fourth field, `fill_min_cardinal_support`, is the morphological
+/// *closing* counterpart to the `min_neighbor_support` *opening*: where
+/// the floor forbids thin protrusions, the fill closes thin intrusions
+/// (deep notches and enclosed holes) the flux-driven heap leaves behind.
 #[derive(Debug, Clone)]
 pub struct GrowthConfig {
     /// Pixel adjacency for heap expansion and annulus dilation.
@@ -142,6 +147,20 @@ pub struct GrowthConfig {
     /// activates. Lets the seed core grow past the size where every
     /// frontier pixel has only a single in-mask neighbour.
     pub min_pixels_before_shape_gate: usize,
+    /// Optional unconditional concavity fill. When `Some(k)`, any pixel
+    /// with at least `k` of its four *cardinal* (edge-sharing) neighbours
+    /// already in the mask is admitted immediately — regardless of flux —
+    /// closing deep notches and enclosed holes the flux-driven heap would
+    /// otherwise leave behind. `k` must be `3` or `4` (`3` also closes
+    /// three-walled notches; `4` only fully-enclosed holes); below `3`
+    /// would fill straight edges (`Δperimeter = 4 - 2k >= 0`) and grow
+    /// without bound. Because it counts cardinal neighbours only it is
+    /// identical under either [`Connectivity`]. The fill respects the
+    /// label whitelist (source separation stays with segmentation) but
+    /// not finiteness — a closed-over bad/NaN pixel simply joins the
+    /// footprint for the caller's photometry to exclude. `None` disables
+    /// it.
+    pub fill_min_cardinal_support: Option<usize>,
     /// Lower bound on the mask size before stop checks may fire.
     /// Prevents premature termination on the first handful of pixels.
     pub min_pixels_before_stop_check: usize,

@@ -30,6 +30,7 @@ def grow_mask(
     shape_weight: float = 1.0,
     min_neighbor_support: int = 2,
     min_pixels_before_shape_gate: int = 8,
+    fill_min_cardinal_support: Optional[int] = 3,
     # Auto-follows ``err`` when not passed (2.0 if err is not None, else None).
     snr_threshold: Optional[float] = ...,
     snr_hysteresis: int = 3,

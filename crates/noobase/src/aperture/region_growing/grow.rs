@@ -116,6 +116,62 @@ fn count_mask_neighbors(
     support
 }
 
+/// Count the in-mask *cardinal* (edge-sharing) neighbours of `(row, col)`.
+///
+/// This is the support the concavity fill keys on: a pixel boxed in on
+/// three or more of its four cardinal sides sits in a notch (or hole)
+/// whose closure shrinks the 4-connected perimeter. Diagonal neighbours
+/// touch only at a corner and do not change edge exposure, so the count
+/// — and hence the fill — is identical under either [`Connectivity`].
+fn count_cardinal_mask_neighbors(row: usize, col: usize, mask: &Array2<bool>) -> usize {
+    let rows = mask.shape()[0];
+    let cols = mask.shape()[1];
+    let mut support = 0;
+    for &(d_row, d_col) in Connectivity::Four.offsets() {
+        let neighbor_row = row as isize + d_row;
+        let neighbor_col = col as isize + d_col;
+        if neighbor_row < 0 || neighbor_col < 0 {
+            continue;
+        }
+        let neighbor_row = neighbor_row as usize;
+        let neighbor_col = neighbor_col as usize;
+        if neighbor_row >= rows || neighbor_col >= cols {
+            continue;
+        }
+        if mask[(neighbor_row, neighbor_col)] {
+            support += 1;
+        }
+    }
+    support
+}
+
+/// Push the in-bounds, not-yet-masked cardinal neighbours of `(row, col)`
+/// onto `stack` as fill candidates.
+fn push_cardinal_unvisited(
+    row: usize,
+    col: usize,
+    mask: &Array2<bool>,
+    stack: &mut Vec<(usize, usize)>,
+) {
+    let rows = mask.shape()[0];
+    let cols = mask.shape()[1];
+    for &(d_row, d_col) in Connectivity::Four.offsets() {
+        let next_row = row as isize + d_row;
+        let next_col = col as isize + d_col;
+        if next_row < 0 || next_col < 0 {
+            continue;
+        }
+        let next_row = next_row as usize;
+        let next_col = next_col as usize;
+        if next_row >= rows || next_col >= cols {
+            continue;
+        }
+        if !mask[(next_row, next_col)] {
+            stack.push((next_row, next_col));
+        }
+    }
+}
+
 /// Push every in-bounds, unmasked, finite-detection, label-allowed
 /// neighbour of `(row, col)` onto `heap`, keyed by the shape-regularised
 /// priority `detection_value + shape_weight * support_fraction`.
@@ -171,6 +227,62 @@ fn push_unvisited_neighbors(
             row: next_row,
             col: next_col,
         });
+    }
+}
+
+/// Unconditionally close concavities reachable from the just-admitted
+/// pixels: any candidate with at least `fill_min_cardinal_support` in-mask
+/// cardinal neighbours is admitted immediately, ignoring its flux (and
+/// finiteness), then its own cardinal neighbours are re-examined so a
+/// notch or one-pixel slot zips shut in a single cascade.
+///
+/// Disabled (`fill_min_cardinal_support == None`) it is a no-op. Filled
+/// pixels increment `n_iterations` (preserving the
+/// `mask.count() == seeds + n_iterations` invariant), feed the heap their
+/// neighbours for continued flux growth, and flip `touches_edge` if they
+/// land on the cutout edge. The label whitelist is honoured — source
+/// separation stays with segmentation, never this fill.
+#[allow(clippy::too_many_arguments)]
+fn fill_enclosed_cascade(
+    started_from: &[(usize, usize)],
+    detection: ArrayView2<f64>,
+    mask: &mut Array2<bool>,
+    label: Option<&LabelInput>,
+    config: &GrowthConfig,
+    heap: &mut BinaryHeap<HeapItem>,
+    n_iterations: &mut usize,
+    touches_edge: &mut bool,
+) {
+    let Some(threshold) = config.fill_min_cardinal_support else {
+        return;
+    };
+    let rows = mask.shape()[0];
+    let cols = mask.shape()[1];
+
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    for &(row, col) in started_from {
+        push_cardinal_unvisited(row, col, mask, &mut stack);
+    }
+
+    while let Some((row, col)) = stack.pop() {
+        if mask[(row, col)] {
+            continue;
+        }
+        if let Some(label) = label
+            && !label.allowed.contains(&label.map[(row, col)])
+        {
+            continue;
+        }
+        if count_cardinal_mask_neighbors(row, col, mask) < threshold {
+            continue;
+        }
+        mask[(row, col)] = true;
+        *n_iterations += 1;
+        if row == 0 || row + 1 == rows || col == 0 || col + 1 == cols {
+            *touches_edge = true;
+        }
+        push_unvisited_neighbors(row, col, detection, mask, label, config, heap);
+        push_cardinal_unvisited(row, col, mask, &mut stack);
     }
 }
 
@@ -236,6 +348,11 @@ pub fn grow_mask(
         if !(lo >= 0.0 && lo < hi && hi <= 100.0) {
             return Err(GrowError::GradientPercentileInvalid { lo, hi });
         }
+    }
+    if let Some(threshold) = config.fill_min_cardinal_support
+        && !(3..=4).contains(&threshold)
+    {
+        return Err(GrowError::FillSupportInvalid { value: threshold });
     }
     // The err / SnrStop binding is bidirectional: enabling one without
     // the other is a caller bug, not a degraded mode.
@@ -324,6 +441,20 @@ pub fn grow_mask(
     let mut n_iterations: usize = 0;
     let mut stop_state = StopState::new();
 
+    // Close any concavity the seed set itself already encloses before the
+    // flux-driven loop starts (a no-op for a single seed, or when the
+    // fill is disabled).
+    fill_enclosed_cascade(
+        seed_pixels,
+        detection,
+        &mut mask,
+        label.as_ref(),
+        config,
+        &mut heap,
+        &mut n_iterations,
+        &mut touches_edge,
+    );
+
     loop {
         if touches_edge {
             return Ok(GrowthResult {
@@ -373,6 +504,18 @@ pub fn grow_mask(
             label.as_ref(),
             config,
             &mut heap,
+        );
+        // Real-time concavity closing: the pixel just admitted may have
+        // boxed in a neighbouring notch, which this zips shut at once.
+        fill_enclosed_cascade(
+            &[(row, col)],
+            detection,
+            &mut mask,
+            label.as_ref(),
+            config,
+            &mut heap,
+            &mut n_iterations,
+            &mut touches_edge,
         );
 
         if n_iterations >= config.min_pixels_before_stop_check
@@ -427,6 +570,7 @@ mod tests {
             shape_weight: 0.0,
             min_neighbor_support: 1,
             min_pixels_before_shape_gate: 0,
+            fill_min_cardinal_support: None,
             min_pixels_before_stop_check: 0,
             check_interval: 1,
             annulus_thickness: 1,
@@ -624,6 +768,7 @@ mod tests {
             shape_weight: 0.0,
             min_neighbor_support: 1,
             min_pixels_before_shape_gate: 0,
+            fill_min_cardinal_support: None,
             min_pixels_before_stop_check: 5,
             check_interval: 1,
             annulus_thickness: 1,
@@ -699,6 +844,7 @@ mod tests {
             shape_weight: 0.0,
             min_neighbor_support: 1,
             min_pixels_before_shape_gate: 0,
+            fill_min_cardinal_support: None,
             min_pixels_before_stop_check: 5,
             check_interval: 1,
             annulus_thickness: 2,
@@ -921,6 +1067,86 @@ mod tests {
         );
     }
 
+    /// A 3x3 bright block with a dead (NaN) centre, walled off by NaN so
+    /// the flux-driven heap can never admit the centre. The cardinal fill
+    /// must close it once its four sides are in the mask, regardless of
+    /// its (non-finite) value; with the fill disabled it stays a hole.
+    #[test]
+    fn fill_closes_enclosed_pixel_regardless_of_flux() {
+        let mut data = Array2::<f64>::from_elem((5, 5), f64::NAN);
+        for row in 1..=3 {
+            for col in 1..=3 {
+                data[(row, col)] = 10.0;
+            }
+        }
+        data[(2, 2)] = f64::NAN; // dead centre the heap can never reach
+        let err = ones_err((5, 5));
+        let seeds = [(1, 1)];
+
+        let mut config = trivial_config();
+        config.fill_min_cardinal_support = None;
+        let unfilled = grow_mask(
+            data.view(),
+            data.view(),
+            Some(err.view()),
+            None,
+            &seeds,
+            &config,
+        )
+        .expect("growth must succeed");
+        assert!(
+            !unfilled.mask[(2, 2)],
+            "without the fill the dead centre must stay a hole"
+        );
+
+        config.fill_min_cardinal_support = Some(3);
+        let filled = grow_mask(
+            data.view(),
+            data.view(),
+            Some(err.view()),
+            None,
+            &seeds,
+            &config,
+        )
+        .expect("growth must succeed");
+        assert!(
+            filled.mask[(2, 2)],
+            "the cardinal fill must close the enclosed dead centre"
+        );
+
+        // The eight bright sides are admitted either way.
+        for &(row, col) in &[
+            (1, 1),
+            (1, 2),
+            (1, 3),
+            (2, 1),
+            (2, 3),
+            (3, 1),
+            (3, 2),
+            (3, 3),
+        ] {
+            assert!(filled.mask[(row, col)] && unfilled.mask[(row, col)]);
+        }
+    }
+
+    #[test]
+    fn fill_support_out_of_range_errors() {
+        let data = Array2::<f64>::zeros((3, 3));
+        let err_array = ones_err((3, 3));
+        let mut config = trivial_config();
+        config.fill_min_cardinal_support = Some(2); // < 3: would run away
+        let err = grow_mask(
+            data.view(),
+            data.view(),
+            Some(err_array.view()),
+            None,
+            &[(1, 1)],
+            &config,
+        )
+        .unwrap_err();
+        assert_eq!(err, GrowError::FillSupportInvalid { value: 2 });
+    }
+
     #[test]
     fn gradient_percentile_invalid_errors() {
         let data = Array2::<f64>::zeros((3, 3));
@@ -938,6 +1164,7 @@ mod tests {
             shape_weight: 0.0,
             min_neighbor_support: 1,
             min_pixels_before_shape_gate: 0,
+            fill_min_cardinal_support: None,
             min_pixels_before_stop_check: 5,
             check_interval: 1,
             annulus_thickness: 2,
