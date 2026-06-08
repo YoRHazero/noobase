@@ -10,10 +10,13 @@
 //!
 //! - **SNR stop**: the cumulative signal-to-noise inside a 1-annulus ring
 //!   just outside the current mask falls below a threshold.
-//! - **Gradient stop**: the ratio of mean flux in the *outer* annulus to
-//!   the *inner* annulus rises above a threshold (the radial profile has
-//!   flipped — typically the mask has reached the basin between two
-//!   sources).
+//! - **Gradient stop**: the ratio of the *outer* annulus to the *inner*
+//!   annulus rises above a threshold (the radial profile has flipped —
+//!   typically the mask has reached the basin between two sources). Each
+//!   ring is summarised by a percentile-band mean (default the `[75, 99]`
+//!   band) rather than a plain mean, so a rising neighbour stays visible
+//!   even when most of the ring is sky and isolated hot pixels are
+//!   trimmed.
 //!
 //! The two criteria are combined with **OR** semantics: whichever fires
 //! first terminates the growth. Each carries an independent hysteresis

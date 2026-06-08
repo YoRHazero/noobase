@@ -231,6 +231,12 @@ pub fn grow_mask(
             max_neighbors,
         });
     }
+    if let Some(gradient) = config.stop.gradient {
+        let (lo, hi) = (gradient.lo_percentile, gradient.hi_percentile);
+        if !(lo >= 0.0 && lo < hi && hi <= 100.0) {
+            return Err(GrowError::GradientPercentileInvalid { lo, hi });
+        }
+    }
     // The err / SnrStop binding is bidirectional: enabling one without
     // the other is a caller bug, not a degraded mode.
     match (err.as_ref(), config.stop.snr) {
@@ -686,6 +692,8 @@ mod tests {
                 gradient: Some(GradientStop {
                     ratio_threshold: 1.0,
                     hysteresis: 2,
+                    lo_percentile: 75.0,
+                    hi_percentile: 99.0,
                 }),
             },
             shape_weight: 0.0,
@@ -910,6 +918,34 @@ mod tests {
                 detection_shape: (2, 2),
                 data_shape: (3, 3),
             }
+        );
+    }
+
+    #[test]
+    fn gradient_percentile_invalid_errors() {
+        let data = Array2::<f64>::zeros((3, 3));
+        let config = GrowthConfig {
+            connectivity: Connectivity::Eight,
+            stop: StopCriterion {
+                snr: None,
+                gradient: Some(GradientStop {
+                    ratio_threshold: 1.0,
+                    hysteresis: 2,
+                    lo_percentile: 99.0,
+                    hi_percentile: 75.0, // lo >= hi: invalid
+                }),
+            },
+            shape_weight: 0.0,
+            min_neighbor_support: 1,
+            min_pixels_before_shape_gate: 0,
+            min_pixels_before_stop_check: 5,
+            check_interval: 1,
+            annulus_thickness: 2,
+        };
+        let err = grow_mask(data.view(), data.view(), None, None, &[(1, 1)], &config).unwrap_err();
+        assert_eq!(
+            err,
+            GrowError::GradientPercentileInvalid { lo: 99.0, hi: 75.0 }
         );
     }
 

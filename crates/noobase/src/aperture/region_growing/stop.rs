@@ -117,39 +117,48 @@ impl StopState {
         let rows = annuli.inner.shape()[0];
         let cols = annuli.inner.shape()[1];
 
-        let mut inner_sum: f64 = 0.0;
-        let mut inner_count: usize = 0;
-        let mut outer_sum: f64 = 0.0;
-        let mut outer_count: usize = 0;
+        let mut inner_values: Vec<f64> = Vec::new();
+        let mut outer_values: Vec<f64> = Vec::new();
         for row in 0..rows {
             for col in 0..cols {
                 let pixel = data[(row, col)];
+                // Non-finite pixels (NaN-masked / dead) cannot take part
+                // in a sorted percentile band; drop them from both rings.
+                if !pixel.is_finite() {
+                    continue;
+                }
                 if annuli.inner[(row, col)] {
-                    inner_count += 1;
-                    inner_sum += pixel;
+                    inner_values.push(pixel);
                 }
                 if annuli.outer[(row, col)] {
-                    outer_count += 1;
-                    outer_sum += pixel;
+                    outer_values.push(pixel);
                 }
             }
         }
 
-        if inner_count == 0 || outer_count == 0 {
-            // Per spec: either ring empty resets the counter (we cannot
-            // measure a gradient we have no geometry for).
+        if inner_values.is_empty() || outer_values.is_empty() {
+            // Either ring empty (no geometry, or all non-finite) resets
+            // the counter: we cannot measure a gradient we cannot see.
             self.gradient_violation_count = 0;
             return None;
         }
 
-        let inner_mean = inner_sum / inner_count as f64;
-        let outer_mean = outer_sum / outer_count as f64;
-        let ratio = outer_mean / inner_mean;
+        let inner_band = percentile_band_mean(
+            &mut inner_values,
+            config.lo_percentile,
+            config.hi_percentile,
+        );
+        let outer_band = percentile_band_mean(
+            &mut outer_values,
+            config.lo_percentile,
+            config.hi_percentile,
+        );
+        let ratio = outer_band / inner_band;
 
-        // NaN / inf flow through here without special-casing: `NaN >
-        // threshold` is false (counter resets) and `inf > threshold` is
-        // true (counter advances — correct when inner_mean = 0 with a
-        // positive outer_mean, which really is a gradient flip).
+        // `inner_band == 0` yields inf (positive outer) or NaN (zero
+        // outer): `inf > threshold` is true (a genuine flip out of a
+        // zero-level basin) and `NaN > threshold` is false (counter
+        // resets), so no special-casing is needed.
         if ratio > config.ratio_threshold {
             self.gradient_violation_count += 1;
             if self.gradient_violation_count >= config.hysteresis {
@@ -159,5 +168,90 @@ impl StopState {
             self.gradient_violation_count = 0;
         }
         None
+    }
+}
+
+/// Linearly-interpolated percentile of a sorted-ascending slice, matching
+/// numpy's default ("linear") method. `sorted` must be non-empty and
+/// `percentile` in `[0, 100]`.
+fn percentile_sorted(sorted: &[f64], percentile: f64) -> f64 {
+    let n = sorted.len();
+    if n == 1 {
+        return sorted[0];
+    }
+    let rank = (percentile / 100.0) * (n as f64 - 1.0);
+    let lower = rank.floor() as usize;
+    let upper = rank.ceil() as usize;
+    if lower == upper {
+        return sorted[lower];
+    }
+    let frac = rank - lower as f64;
+    sorted[lower] + frac * (sorted[upper] - sorted[lower])
+}
+
+/// Mean of the values whose magnitude falls in the
+/// `[lo_percentile, hi_percentile]` percentile band of `values`.
+///
+/// Sorts `values` in place. `values` must be non-empty and finite, and
+/// the bounds satisfy `0 <= lo < hi <= 100` (validated by `grow_mask`).
+/// The degenerate case where the band brackets no actual value (only
+/// reachable for a handful of pixels) falls back to the plain mean so
+/// the caller never divides by zero. `[0, 100]` reproduces that plain
+/// mean exactly.
+fn percentile_band_mean(values: &mut [f64], lo_percentile: f64, hi_percentile: f64) -> f64 {
+    values.sort_by(|a, b| a.total_cmp(b));
+    let low_value = percentile_sorted(values, lo_percentile);
+    let high_value = percentile_sorted(values, hi_percentile);
+    let mut sum = 0.0;
+    let mut count = 0usize;
+    for &value in values.iter() {
+        if value >= low_value && value <= high_value {
+            sum += value;
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return values.iter().sum::<f64>() / values.len() as f64;
+    }
+    sum / count as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn percentile_band_mean_isolates_the_bright_mode() {
+        // 70% background (0) + 30% source (10). The plain mean is 3.0,
+        // but the [75, 99] band drops the diluting background and keeps
+        // the source pixels, so the band mean recovers the source level.
+        let mut values = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 10.0, 10.0];
+        let band = percentile_band_mean(&mut values, 75.0, 99.0);
+        assert!(
+            (band - 10.0).abs() < 1e-9,
+            "band mean should isolate the bright mode, got {band}"
+        );
+    }
+
+    #[test]
+    fn percentile_band_full_range_is_plain_mean() {
+        let mut values = vec![1.0, 2.0, 3.0, 4.0];
+        let band = percentile_band_mean(&mut values, 0.0, 100.0);
+        assert!(
+            (band - 2.5).abs() < 1e-9,
+            "[0, 100] must equal the plain mean, got {band}"
+        );
+    }
+
+    #[test]
+    fn percentile_band_trims_a_single_hot_pixel() {
+        // A lone spike at the top is excluded by hi_percentile, while a
+        // multi-pixel bright group (a real neighbour) would survive.
+        let mut values = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1000.0];
+        let band = percentile_band_mean(&mut values, 75.0, 95.0);
+        assert!(
+            band < 2.0,
+            "a single hot pixel must be trimmed by the upper bound, got {band}"
+        );
     }
 }

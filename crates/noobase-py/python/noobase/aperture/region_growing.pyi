@@ -35,6 +35,8 @@ def grow_mask(
     snr_hysteresis: int = 3,
     gradient_ratio_threshold: Optional[float] = 1.0,
     gradient_hysteresis: int = 3,
+    gradient_lo_percentile: float = 75.0,
+    gradient_hi_percentile: float = 99.0,
     min_pixels_before_stop_check: int = 30,
     check_interval: int = 5,
     annulus_thickness: int = 2,

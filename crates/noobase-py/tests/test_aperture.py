@@ -114,6 +114,19 @@ def test_min_neighbor_support_too_large_raises_value_error():
         )
 
 
+def test_gradient_percentile_invalid_raises_value_error():
+    # New core GrowError variant for an inverted percentile band.
+    data = np.zeros((3, 3), dtype=np.float64)
+    with pytest.raises(ValueError, match="gradient percentile band"):
+        grow_mask(
+            data,
+            [(1, 1)],
+            gradient_ratio_threshold=1.0,
+            gradient_lo_percentile=99.0,
+            gradient_hi_percentile=75.0,
+        )
+
+
 def test_default_shape_weight_scaling_runs_without_err():
     # With err omitted the SNR stop is auto-disabled and the wrapper
     # scales the default shape_weight by mad_std(data) (no err path).

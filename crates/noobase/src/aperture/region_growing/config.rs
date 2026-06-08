@@ -57,14 +57,27 @@ pub struct SnrStop {
 
 /// Radial-gradient flip stop criterion evaluated across the two annuli.
 ///
-/// Fires when `mean(outer_annulus.flux) / mean(inner_annulus.flux)`
+/// Fires when `band_mean(outer_annulus) / band_mean(inner_annulus)`
 /// stays strictly above `ratio_threshold` for `hysteresis` consecutive
 /// checks. This catches the case where the mask has reached the basin
 /// between two sources and is about to climb the neighbour.
+///
+/// `band_mean` is the mean of each ring's pixels whose value falls in
+/// the `[lo_percentile, hi_percentile]` percentile band of that ring.
+/// The lower bound drops the sky pixels that otherwise dilute the ring
+/// average (so a rising neighbour stays visible even when most of the
+/// ring is background); the upper bound trims the brightest pixels
+/// (cosmic rays / hot pixels) by count, which a bright multi-pixel
+/// neighbour survives. `[0, 100]` recovers the plain ring mean.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GradientStop {
     pub ratio_threshold: f64,
     pub hysteresis: usize,
+    /// Lower percentile bound of the per-ring band mean (e.g. `75.0`).
+    pub lo_percentile: f64,
+    /// Upper percentile bound of the per-ring band mean (e.g. `99.0`).
+    /// Must satisfy `0 <= lo_percentile < hi_percentile <= 100`.
+    pub hi_percentile: f64,
 }
 
 /// The set of enabled stop criteria. At least one must be enabled.

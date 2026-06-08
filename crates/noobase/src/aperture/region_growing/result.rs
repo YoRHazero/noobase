@@ -108,4 +108,12 @@ pub enum GrowError {
         min_neighbor_support: usize,
         max_neighbors: usize,
     },
+    /// The gradient stop's percentile band is invalid. The bounds must
+    /// satisfy `0 <= lo_percentile < hi_percentile <= 100` (and both
+    /// finite), otherwise the per-ring band mean is undefined.
+    #[error(
+        "gradient percentile band [{lo}, {hi}] is invalid; \
+         require 0 <= lo < hi <= 100"
+    )]
+    GradientPercentileInvalid { lo: f64, hi: f64 },
 }

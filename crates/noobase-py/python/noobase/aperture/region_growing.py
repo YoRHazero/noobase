@@ -66,6 +66,8 @@ def grow_mask(
     snr_hysteresis: int = 3,
     gradient_ratio_threshold: Optional[float] = 1.0,
     gradient_hysteresis: int = 3,
+    gradient_lo_percentile: float = 75.0,
+    gradient_hi_percentile: float = 99.0,
     min_pixels_before_stop_check: int = 30,
     check_interval: int = 5,
     annulus_thickness: int = 2,
@@ -138,6 +140,14 @@ def grow_mask(
     gradient_hysteresis : int, optional
         Consecutive checks with ratio above threshold required to fire.
         Default ``3``.
+    gradient_lo_percentile, gradient_hi_percentile : float, optional
+        Each annulus is summarised, in the gradient ratio, by the mean of
+        its pixels within this percentile band rather than a plain mean.
+        The lower bound (default ``75``) drops the sky pixels that
+        otherwise dilute the ring and hide a rising neighbour; the upper
+        bound (default ``99``) trims isolated hot pixels by count (a
+        multi-pixel neighbour survives). Must satisfy
+        ``0 <= lo < hi <= 100``; ``(0, 100)`` recovers the plain mean.
     min_pixels_before_stop_check : int, optional
         Lower bound on the admitted-pixel count before stop checks may
         fire. Default ``30``.
@@ -192,6 +202,8 @@ def grow_mask(
         snr_hysteresis=snr_hysteresis,
         gradient_ratio_threshold=gradient_ratio_threshold,
         gradient_hysteresis=gradient_hysteresis,
+        gradient_lo_percentile=gradient_lo_percentile,
+        gradient_hi_percentile=gradient_hi_percentile,
         min_pixels_before_stop_check=min_pixels_before_stop_check,
         check_interval=check_interval,
         annulus_thickness=annulus_thickness,
