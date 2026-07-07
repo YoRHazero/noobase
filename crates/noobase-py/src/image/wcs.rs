@@ -76,9 +76,7 @@ impl PyWcsProgram {
             .iter()
             .map(|item| {
                 item.extract::<PyReadonlyArrayDyn<'py, f64>>().map_err(|_| {
-                    PyTypeError::new_err(
-                        "WcsProgram expects float64 numpy arrays (or all scalars)",
-                    )
+                    PyTypeError::new_err("WcsProgram expects float64 numpy arrays (or all scalars)")
                 })
             })
             .collect::<PyResult<_>>()?;
@@ -144,10 +142,10 @@ fn parse_program(spec: &Bound<'_, PyDict>) -> PyResult<Program> {
 
     let mut ops = Vec::with_capacity(ops_list.len());
     for (index, item) in ops_list.iter().enumerate() {
-        let d = item.cast::<PyDict>().map_err(|_| {
-            PyTypeError::new_err(format!("ops[{index}] is not a dict"))
-        })?;
-        ops.push(parse_op(&d, index)?);
+        let d = item
+            .cast::<PyDict>()
+            .map_err(|_| PyTypeError::new_err(format!("ops[{index}] is not a dict")))?;
+        ops.push(parse_op(d, index)?);
     }
     Program::new(n_regs, inputs, outputs, ops).map_err(to_value_error)
 }
@@ -381,9 +379,9 @@ where
     let value = d
         .get_item(key)?
         .ok_or_else(|| PyValueError::new_err(format!("spec missing key {key:?}")))?;
-    value.extract::<T>().map_err(|err| {
-        PyValueError::new_err(format!("spec key {key:?}: {}", err.into()))
-    })
+    value
+        .extract::<T>()
+        .map_err(|err| PyValueError::new_err(format!("spec key {key:?}: {}", err.into())))
 }
 
 pub(crate) fn register_into(module: &Bound<'_, PyModule>) -> PyResult<()> {

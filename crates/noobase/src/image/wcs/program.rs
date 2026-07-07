@@ -16,7 +16,9 @@ const PAR_THRESHOLD: usize = 2 * CHUNK;
 /// Errors raised when constructing or evaluating a [`Program`].
 #[derive(Debug, Error)]
 pub enum ProgramError {
-    #[error("op {index} ({op}): expected {want_in} inputs / {want_out} outputs, got {got_in} / {got_out}")]
+    #[error(
+        "op {index} ({op}): expected {want_in} inputs / {want_out} outputs, got {got_in} / {got_out}"
+    )]
     Arity {
         index: usize,
         op: &'static str,
@@ -183,11 +185,7 @@ impl Program {
             )
             .collect();
 
-        let mut out: Vec<Vec<f64>> = self
-            .outputs
-            .iter()
-            .map(|_| Vec::with_capacity(n))
-            .collect();
+        let mut out: Vec<Vec<f64>> = self.outputs.iter().map(|_| Vec::with_capacity(n)).collect();
         for chunk in chunks {
             for (dst, src) in out.iter_mut().zip(chunk) {
                 dst.extend_from_slice(&src);
@@ -209,7 +207,9 @@ impl Program {
             regs[reg as usize] = value;
         }
         for instr in &self.ops {
-            instr.op.apply(&mut regs, 1, 1, &instr.inputs, &instr.outputs);
+            instr
+                .op
+                .apply(&mut regs, 1, 1, &instr.inputs, &instr.outputs);
         }
         Ok(self.outputs.iter().map(|&reg| regs[reg as usize]).collect())
     }
@@ -285,12 +285,7 @@ mod tests {
 
     #[test]
     fn wiring_validation_rejects_bad_registers() {
-        let err = Program::new(
-            1,
-            vec![0],
-            vec![5],
-            vec![],
-        );
+        let err = Program::new(1, vec![0], vec![5], vec![]);
         assert!(matches!(err, Err(ProgramError::IoRegister { reg: 5, .. })));
     }
 }

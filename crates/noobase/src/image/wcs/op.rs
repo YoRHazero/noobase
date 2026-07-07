@@ -1,6 +1,5 @@
 //! Transform op-codes and their per-chunk evaluation kernels.
 
-
 use super::program::Program;
 
 /// Comparison used by [`Op::Logical`], matching
@@ -252,7 +251,10 @@ pub enum Op {
     /// ignored and should be zero.
     Poly2d { degree: usize, coeffs: Vec<f64> },
     /// `(x', y') = m @ (x, y) + t` (2 -> 2).
-    Affine2 { matrix: [[f64; 2]; 2], translation: [f64; 2] },
+    Affine2 {
+        matrix: [[f64; 2]; 2],
+        translation: [f64; 2],
+    },
     /// Unit-sphere `(lon, lat)` degrees -> cartesian `(x, y, z)` (2 -> 3).
     SphToCart,
     /// Cartesian `(x, y, z)` -> `(lon, lat)` degrees (3 -> 2). `wrap_lon_at`
@@ -348,11 +350,9 @@ impl Op {
             Op::Rot3 { .. } | Op::GratingAngles3D { .. } | Op::Rot3Gwa { .. } => (3, 3),
             Op::GrismForward { .. } => (5, 1),
             Op::GrismBackward { .. } => (4, 2),
-            Op::Select { cases, .. } => cases
-                .first()
-                .map_or((0, 0), |(_, program)| {
-                    (program.n_inputs(), program.n_outputs())
-                }),
+            Op::Select { cases, .. } => cases.first().map_or((0, 0), |(_, program)| {
+                (program.n_inputs(), program.n_outputs())
+            }),
         }
     }
 
@@ -385,9 +385,7 @@ impl Op {
             }
         };
         match self {
-            Op::Poly1d { coeffs } if coeffs.is_empty() => {
-                Err("poly1d: empty coefficients".into())
-            }
+            Op::Poly1d { coeffs } if coeffs.is_empty() => Err("poly1d: empty coefficients".into()),
             Op::Poly2d { degree, coeffs } => {
                 let want = (degree + 1) * (degree + 1);
                 if coeffs.len() != want {
@@ -399,9 +397,9 @@ impl Op {
                     Ok(())
                 }
             }
-            Op::CartToSph { wrap_lon_at } if *wrap_lon_at != 180 && *wrap_lon_at != 360 => {
-                Err(format!("cart2sph: wrap_lon_at must be 180 or 360, got {wrap_lon_at}"))
-            }
+            Op::CartToSph { wrap_lon_at } if *wrap_lon_at != 180 && *wrap_lon_at != 360 => Err(
+                format!("cart2sph: wrap_lon_at must be 180 or 360, got {wrap_lon_at}"),
+            ),
             Op::GrismForward { orders, models, .. } => {
                 if orders.len() != models.len() || orders.is_empty() {
                     return Err("grism_forward: orders/models length mismatch or empty".into());
@@ -431,7 +429,9 @@ impl Op {
                         values.len()
                     ));
                 }
-                if points.windows(2).any(|w| !(w[0] < w[1])) {
+                // `all(<)` is false for a non-ascending pair *or* a NaN
+                // (NaN comparisons are false), so this rejects both.
+                if !points.windows(2).all(|w| w[0] < w[1]) {
                     return Err("tabular1d: points must be strictly ascending".into());
                 }
                 Ok(())
@@ -467,9 +467,7 @@ impl Op {
                             ));
                         }
                         if n_in < 2 {
-                            return Err(
-                                "select: array label key needs >= 2 inputs (x, y)".into()
-                            );
+                            return Err("select: array label key needs >= 2 inputs (x, y)".into());
                         }
                     }
                     LabelKey::Dict {
@@ -501,7 +499,14 @@ impl Op {
     /// `n <= chunk` is the number of live elements. Register indices were
     /// validated at program construction.
     #[inline]
-    pub(crate) fn apply(&self, regs: &mut [f64], chunk: usize, n: usize, ins: &[u16], outs: &[u16]) {
+    pub(crate) fn apply(
+        &self,
+        regs: &mut [f64],
+        chunk: usize,
+        n: usize,
+        ins: &[u16],
+        outs: &[u16],
+    ) {
         let r = |reg: u16| reg as usize * chunk;
         match self {
             Op::Shift { offset } => {
@@ -532,7 +537,10 @@ impl Op {
                     regs[o + k] = poly2d(*degree, coeffs, regs[ix + k], regs[iy + k]);
                 }
             }
-            Op::Affine2 { matrix, translation } => {
+            Op::Affine2 {
+                matrix,
+                translation,
+            } => {
                 let (ix, iy, ox, oy) = (r(ins[0]), r(ins[1]), r(outs[0]), r(outs[1]));
                 for k in 0..n {
                     let (x, y) = (regs[ix + k], regs[iy + k]);
@@ -637,7 +645,11 @@ impl Op {
                     regs[olat + k] = rr.recip().atan().to_degrees();
                 }
             }
-            Op::GrismForward { axis, orders, models } => {
+            Op::GrismForward {
+                axis,
+                orders,
+                models,
+            } => {
                 let (ix, iy, ix0, iy0, iord) =
                     (r(ins[0]), r(ins[1]), r(ins[2]), r(ins[3]), r(ins[4]));
                 let o = r(outs[0]);
@@ -801,16 +813,14 @@ impl Op {
                     let gathered: Vec<Vec<f64>> = input_refs
                         .iter()
                         .map(|column| {
-                            let mut buffer =
-                                Vec::with_capacity(runs.iter().map(|(_, l)| l).sum());
+                            let mut buffer = Vec::with_capacity(runs.iter().map(|(_, l)| l).sum());
                             for &(start, len) in &runs {
                                 buffer.extend_from_slice(&column[start..start + len]);
                             }
                             buffer
                         })
                         .collect();
-                    let gathered_refs: Vec<&[f64]> =
-                        gathered.iter().map(Vec::as_slice).collect();
+                    let gathered_refs: Vec<&[f64]> = gathered.iter().map(Vec::as_slice).collect();
                     // Arity and wiring were validated at construction, and
                     // gathered inputs share one length by construction.
                     let results = program
