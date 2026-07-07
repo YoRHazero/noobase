@@ -1,5 +1,6 @@
 mod psf;
 mod stamp;
+mod wcs;
 
 use ::noobase::convolve::{Boundary, Normalization};
 use ::noobase::image as core_image;
@@ -374,6 +375,7 @@ pub(crate) fn build_submodule<'py>(py: Python<'py>, parent: &Bound<'py, PyModule
     image.add_function(wrap_pyfunction!(convolve_psf_function, &image)?)?;
     image.add_function(wrap_pyfunction!(convolve_gaussian_axis_function, &image)?)?;
     stamp::register_into(&image)?;
+    wcs::register_into(&image)?;
     psf::build_submodule(py, &image)?;
     parent.add_submodule(&image)?;
     let sys_modules = py.import("sys")?.getattr("modules")?;

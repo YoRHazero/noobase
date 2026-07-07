@@ -4,6 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from . import psf as psf
+from . import wcs as wcs
 
 
 class ReprojectResult:

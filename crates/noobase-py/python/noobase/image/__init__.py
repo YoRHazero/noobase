@@ -1,4 +1,4 @@
-"""Image-domain primitives (planar, no WCS)."""
+"""Image-domain primitives (planar; WCS enters only as compiled programs)."""
 
 from noobase._core.image import (
     ReprojectResult,
@@ -9,7 +9,7 @@ from noobase._core.image import (
     reproject_exact,
 )
 
-from . import psf
+from . import psf, wcs
 from .corners import make_pixel_corners
 
 __all__ = [
@@ -21,4 +21,5 @@ __all__ = [
     "make_pixel_corners",
     "psf",
     "reproject_exact",
+    "wcs",
 ]
