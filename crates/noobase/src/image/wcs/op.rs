@@ -102,6 +102,18 @@ impl LabelKey {
     }
 }
 
+/// Maximum number of `t`-coefficients (degree + 1) a [`TPoly`] may have;
+/// enforced by [`Op::check`] so that [`TPoly::invert`] can work in a fixed
+/// stack buffer without silent truncation.
+pub const TPOLY_MAX_COEFFS: usize = 8;
+
+/// How far beyond the trace fit domain `t in [0, 1]` the Newton bracket in
+/// [`TPoly::invert`] extends, so that wavelengths slightly outside an
+/// order's nominal range still invert (the closed forms it replaced were
+/// unbounded; values beyond even this margin fall back to unbracketed
+/// Newton extrapolation).
+const TPOLY_INVERT_MARGIN: f64 = 0.5;
+
 /// Polynomial in the grism trace parameter `t`, in the two forms the JWST
 /// specwcs reference files use (stdatamodels "guess form").
 #[derive(Debug, Clone)]
@@ -137,12 +149,27 @@ impl TPoly {
         }
     }
 
+    /// Number of `t`-coefficients (polynomial degree + 1).
+    #[inline]
+    fn n_t_coeffs(&self) -> usize {
+        match self {
+            TPoly::TOnly { coeffs } => coeffs.len(),
+            TPoly::Spatial { coeff_polys, .. } => coeff_polys.len(),
+        }
+    }
+
     /// Coefficients of the polynomial in `t` at a fixed `(x, y)`.
     ///
     /// Returns the number of coefficients written into `buf` (at most
     /// `buf.len()`); the polynomial degree is that count minus one.
     #[inline]
     fn t_coeffs(&self, x: f64, y: f64, buf: &mut [f64]) -> usize {
+        debug_assert!(
+            self.n_t_coeffs() <= buf.len(),
+            "TPoly with {} t-coefficients exceeds buffer of {} (Op::check should have rejected it)",
+            self.n_t_coeffs(),
+            buf.len()
+        );
         match self {
             TPoly::TOnly { coeffs } => {
                 let n = coeffs.len().min(buf.len());
@@ -162,16 +189,23 @@ impl TPoly {
         }
     }
 
-    /// Solve `p(t; x, y) = value` for `t`, exactly.
+    /// Solve `p(t; x, y) = value` for `t`.
     ///
-    /// Linear and quadratic polynomials (all NIRCam WFSS trace models) are
-    /// solved in closed form; for a quadratic the root closer to the centre
-    /// of the physical trace window `t in [0, 1]` is returned (the other
-    /// root sits at `~ -c1/c2`, far outside the window, because dispersion
-    /// is near-linear). Degenerate / unsupported cases return NaN.
-    #[inline]
+    /// Linear polynomials are solved in closed form. Any higher degree
+    /// (current CRDS NIRCam GRISMR specwcs fits cubic `lmodels`) goes
+    /// through a safeguarded Newton iteration seeded from the linear
+    /// solution: dispersion relations are monotonic over the trace fit
+    /// domain `t in [0, 1]`, so the root bracketed in (or near) that
+    /// window is the physical one — the same root the old quadratic
+    /// closed form picked with its "closer to t = 0.5" rule. Converges
+    /// to machine precision in a handful of iterations.
+    ///
+    /// Returns NaN only when no inverse exists: NaN inputs (masked
+    /// pixels), a polynomial that degenerates to a constant at this
+    /// `(x, y)`, or `value` beyond the polynomial's range (past a
+    /// turning point outside the trace window).
     pub fn invert(&self, value: f64, x: f64, y: f64) -> f64 {
-        let mut c = [0.0_f64; 8];
+        let mut c = [0.0_f64; TPOLY_MAX_COEFFS];
         let n = self.t_coeffs(x, y, &mut c);
         // Strip trailing (numerically) zero leading coefficients.
         let mut n = n;
@@ -179,28 +213,97 @@ impl TPoly {
             n -= 1;
         }
         match n {
-            0 => f64::NAN,
-            1 => f64::NAN, // constant polynomial: no unique inverse
-            2 => (value - c[0]) / c[1],
-            3 => {
-                // c2 t^2 + c1 t + (c0 - value) = 0, stable two-root form.
-                let (c0, c1, c2) = (c[0] - value, c[1], c[2]);
-                let disc = c1 * c1 - 4.0 * c2 * c0;
-                if disc < 0.0 {
-                    return f64::NAN;
-                }
-                let q = -0.5 * (c1 + c1.signum() * disc.sqrt());
-                let r1 = q / c2;
-                let r2 = c0 / q;
-                if (r1 - 0.5).abs() <= (r2 - 0.5).abs() {
-                    r1
-                } else {
-                    r2
-                }
+            0 | 1 => {
+                // No unique inverse. Empty models are rejected by
+                // Op::check, so this can only be a Spatial model whose
+                // t-coefficients all vanish at this (x, y) — a broken
+                // reference file, not a masked pixel.
+                debug_assert!(
+                    matches!(self, TPoly::Spatial { .. }),
+                    "TPoly::invert: constant t-polynomial (n = {n})"
+                );
+                f64::NAN
             }
-            _ => f64::NAN, // cubic+ trace models do not occur in JWST WFSS
+            2 => (value - c[0]) / c[1],
+            _ => invert_monotone_poly(&c[..n], value),
         }
     }
+}
+
+/// Solve `p(t) = value` for the root of a dispersion-style polynomial
+/// (monotonic and near-linear over the trace window `t in [0, 1]`) in, or
+/// near, that window. See [`TPoly::invert`] for the selection convention.
+fn invert_monotone_poly(coeffs: &[f64], value: f64) -> f64 {
+    let f = |t: f64| poly1d(coeffs, t) - value;
+    const MAX_ITERS: usize = 64;
+    let tol = |t: f64| 1e-15 * t.abs().max(1.0);
+
+    // Seed from the linear part of the dispersion relation.
+    let seed = if coeffs[1] != 0.0 {
+        (value - coeffs[0]) / coeffs[1]
+    } else {
+        0.5
+    };
+
+    let (mut lo, mut hi) = (-TPOLY_INVERT_MARGIN, 1.0 + TPOLY_INVERT_MARGIN);
+    let (flo, fhi) = (f(lo), f(hi));
+    if flo == 0.0 {
+        return lo;
+    }
+    if fhi == 0.0 {
+        return hi;
+    }
+
+    if flo.is_finite() && fhi.is_finite() && (flo < 0.0) != (fhi < 0.0) {
+        // Root bracketed in the (padded) trace window: Newton, with the
+        // bracket shrinking around the root; any step that would leave
+        // the bracket (including via a tiny derivative) becomes a
+        // bisection step, so convergence is guaranteed.
+        if flo > 0.0 {
+            std::mem::swap(&mut lo, &mut hi); // orient so f(lo) < 0 < f(hi)
+        }
+        let mut t = if (seed - lo) * (seed - hi) < 0.0 {
+            seed
+        } else {
+            0.5 * (lo + hi)
+        };
+        for _ in 0..MAX_ITERS {
+            let ft = f(t);
+            if ft == 0.0 {
+                return t;
+            }
+            if ft < 0.0 {
+                lo = t;
+            } else {
+                hi = t;
+            }
+            let mut t_next = t - ft / poly1d_deriv(coeffs, t);
+            if !t_next.is_finite() || (t_next - lo) * (t_next - hi) >= 0.0 {
+                t_next = 0.5 * (lo + hi);
+            }
+            if (t_next - t).abs() <= tol(t) {
+                return t_next;
+            }
+            t = t_next;
+        }
+        return t; // bisection alone has shrunk the bracket below tol by now
+    }
+
+    // `value` outside the padded window (or NaN input): plain Newton
+    // extrapolation from the linear seed, as the closed forms allowed.
+    let mut t = seed;
+    for _ in 0..MAX_ITERS {
+        let step = f(t) / poly1d_deriv(coeffs, t);
+        let t_next = t - step;
+        if !t_next.is_finite() {
+            return f64::NAN; // hit a turning point: no root on this side
+        }
+        if step.abs() <= tol(t) {
+            return t_next;
+        }
+        t = t_next;
+    }
+    f64::NAN // did not converge (e.g. oscillating around an extremum)
 }
 
 /// Dispersion axis of a JWST WFSS forward grism transform.
@@ -359,6 +462,12 @@ impl Op {
     /// Extra validation beyond arity (coefficient shapes, order tables).
     pub fn check(&self) -> Result<(), String> {
         let check_tpoly = |p: &TPoly, what: &str| -> Result<(), String> {
+            if p.n_t_coeffs() > TPOLY_MAX_COEFFS {
+                return Err(format!(
+                    "{what}: t-polynomial has {} coefficients, max {TPOLY_MAX_COEFFS}",
+                    p.n_t_coeffs()
+                ));
+            }
             match p {
                 TPoly::TOnly { coeffs } if coeffs.is_empty() => {
                     Err(format!("{what}: empty t-polynomial"))
@@ -867,6 +976,16 @@ fn poly1d(coeffs: &[f64], x: f64) -> f64 {
     acc
 }
 
+/// Derivative of [`poly1d`]: `sum_i i * coeffs[i] * x^(i-1)`, by Horner.
+#[inline]
+fn poly1d_deriv(coeffs: &[f64], x: f64) -> f64 {
+    let mut acc = 0.0;
+    for (i, &c) in coeffs.iter().enumerate().skip(1).rev() {
+        acc = acc * x + i as f64 * c;
+    }
+    acc
+}
+
 /// Dense-matrix 2-D polynomial: `sum_{i,j} c[i][j] x^i y^j` with `c`
 /// flattened row-major over `(degree+1) x (degree+1)` (row = x power).
 /// Horner in y innermost, Horner in x outermost.
@@ -910,6 +1029,68 @@ mod tests {
             coeffs: vec![3.9, 1.1, 0.02],
         };
         for &t in &[0.05, 0.3, 0.5, 0.9] {
+            let lam = p.eval(t, 0.0, 0.0);
+            assert!((p.invert(lam, 0.0, 0.0) - t).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn tpoly_cubic_invert_round_trips() {
+        // Cubic lmodel, as fit by current CRDS NIRCam GRISMR specwcs
+        // (jwst_nircam_specwcs_0239/0242.asdf): near-linear dispersion
+        // with small quadratic and cubic corrections.
+        let p = TPoly::TOnly {
+            coeffs: vec![3.9, 1.1, 0.02, 0.005],
+        };
+        for &t in &[0.05, 0.3, 0.5, 0.9] {
+            let lam = p.eval(t, 0.0, 0.0);
+            assert!((p.invert(lam, 0.0, 0.0) - t).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn tpoly_quintic_invert_round_trips() {
+        // Synthetic degree-5 model, monotonic on [0, 1]
+        // (p'(t) = 2 - 0.6 t + 0.45 t^2 - 0.2 t^3 + 0.05 t^4 > 0 there).
+        let p = TPoly::TOnly {
+            coeffs: vec![1.0, 2.0, -0.3, 0.15, -0.05, 0.01],
+        };
+        for &t in &[0.05, 0.3, 0.5, 0.9] {
+            let lam = p.eval(t, 0.0, 0.0);
+            assert!((p.invert(lam, 0.0, 0.0) - t).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn tpoly_spatial_cubic_invert_round_trips() {
+        // Cubic in t whose coefficients are degree-1 polynomials of the
+        // source position (the Spatial form real specwcs lmodels use).
+        // Dense 2x2 matrices, entries [x^0 y^0, x^0 y^1, x^1 y^0, x^1 y^1].
+        let p = TPoly::Spatial {
+            degree: 1,
+            coeff_polys: vec![
+                vec![2.0, 2e-4, 1e-4, 0.0],   // c0(x, y)
+                vec![0.9, 0.0, 5e-5, 0.0],    // c1(x, y)
+                vec![0.05, -1e-5, 0.0, 0.0],  // c2(x, y)
+                vec![-0.008, 0.0, 2e-6, 0.0], // c3(x, y)
+            ],
+        };
+        for &(x0, y0) in &[(0.0, 0.0), (1024.0, 512.0), (300.5, 1900.25)] {
+            for &t in &[0.05, 0.3, 0.5, 0.9] {
+                let lam = p.eval(t, x0, y0);
+                assert!((p.invert(lam, x0, y0) - t).abs() < 1e-12);
+            }
+        }
+    }
+
+    #[test]
+    fn tpoly_cubic_invert_extrapolates_slightly_outside_window() {
+        // Wavelengths just outside the fit domain t in [0, 1] must still
+        // invert (the closed forms this replaced were unbounded).
+        let p = TPoly::TOnly {
+            coeffs: vec![3.9, 1.1, 0.02, 0.005],
+        };
+        for &t in &[-0.2, 1.2] {
             let lam = p.eval(t, 0.0, 0.0);
             assert!((p.invert(lam, 0.0, 0.0) - t).abs() < 1e-12);
         }
