@@ -139,20 +139,23 @@ def test_tan_projection_round_trip_and_affine() -> None:
     np.testing.assert_allclose(out_lat, lat, atol=1e-10)
 
 
-def _grism_specs() -> tuple[dict, dict]:
+def _grism_specs(cubic: bool = False) -> tuple[dict, dict]:
     """A synthetic row-dispersion grism pair (forward and backward specs).
 
     lambda(t; x0, y0) = (3.9 + 1e-5 x0) + (1.1 + 1e-5 y0) t + 0.02 t^2
+                        [+ (0.005 + 1e-6 x0) t^3 with ``cubic=True``,
+                        mirroring current CRDS NIRCam GRISMR specwcs]
     dx(t) = -1200 + 3000 t   (t-only, matching NIRCam row dispersion)
     dy(t; x0, y0) = 0.05 + 1e-6 x0 + 0.4 t
     """
-    lmodels = [
-        {"kind": "spatial", "degree": 1, "coeffs": [
-            _poly2d_coeffs(1, {(0, 0): 3.9, (1, 0): 1e-5}),
-            _poly2d_coeffs(1, {(0, 0): 1.1, (0, 1): 1e-5}),
-            _poly2d_coeffs(1, {(0, 0): 0.02}),
-        ]},
+    lmodel_coeffs = [
+        _poly2d_coeffs(1, {(0, 0): 3.9, (1, 0): 1e-5}),
+        _poly2d_coeffs(1, {(0, 0): 1.1, (0, 1): 1e-5}),
+        _poly2d_coeffs(1, {(0, 0): 0.02}),
     ]
+    if cubic:
+        lmodel_coeffs.append(_poly2d_coeffs(1, {(0, 0): 0.005, (1, 0): 1e-6}))
+    lmodels = [{"kind": "spatial", "degree": 1, "coeffs": lmodel_coeffs}]
     xmodels = [{"kind": "t", "coeffs": [-1200.0, 3000.0]}]
     ymodels = [
         {"kind": "spatial", "degree": 1, "coeffs": [
@@ -195,8 +198,9 @@ def _grism_specs() -> tuple[dict, dict]:
     return forward, backward
 
 
-def test_grism_backward_forward_round_trip() -> None:
-    forward_spec, backward_spec = _grism_specs()
+@pytest.mark.parametrize("cubic", [False, True], ids=["quadratic", "cubic"])
+def test_grism_backward_forward_round_trip(cubic: bool) -> None:
+    forward_spec, backward_spec = _grism_specs(cubic=cubic)
     forward = WcsProgram(forward_spec)
     backward = WcsProgram(backward_spec)
 
@@ -207,13 +211,15 @@ def test_grism_backward_forward_round_trip() -> None:
     order = np.ones_like(x0)
 
     x, y, x0_out, y0_out, order_out = backward(x0, y0, wavelength, order)
+    assert np.isfinite(x).all()
+    assert np.isfinite(y).all()
     np.testing.assert_array_equal(x0_out, x0)
     np.testing.assert_array_equal(order_out, order)
 
     x0_rt, y0_rt, lam_rt, _ = forward(x, y, x0, y0, order)
     np.testing.assert_array_equal(x0_rt, x0)
     np.testing.assert_array_equal(y0_rt, y0)
-    # Exact quadratic inversion: round trip to near machine precision.
+    # Newton trace inversion: round trip to near machine precision.
     np.testing.assert_allclose(lam_rt, wavelength, atol=1e-10)
 
 
